@@ -196,6 +196,8 @@
     <div id="miniPhone">
       <div class="notch"></div>
       <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+      <video id="preloadVid" preload="auto" muted playsinline webkit-playsinline style="display:none"></video>
+      <video id="preloadPrevVid" preload="auto" muted playsinline webkit-playsinline style="display:none"></video>
       <div id="playIcon">
         <svg id="playIconSvg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
       </div>
@@ -228,6 +230,8 @@
     bg1: document.getElementById('bg1'),
     bg2: document.getElementById('bg2'),
     vid: document.getElementById('vid'),
+    preloadVid: document.getElementById('preloadVid'),
+    preloadPrevVid: document.getElementById('preloadPrevVid'),
     miniPhone: document.getElementById('miniPhone'),
     collapseBtn: document.getElementById('collapseBtn'),
     counter: document.getElementById('counter'),
@@ -285,6 +289,25 @@
     photoTimer = setInterval(nextPhoto, 10000);
   }
 
+  function preloadNeighbors(){
+    if(videos.length < 2) return;
+    const nextIdx = (vIndex + 1) % videos.length;
+    const prevIdx = ((vIndex - 1) + videos.length) % videos.length;
+    const nextUrl = 'videos/' + videos[nextIdx];
+    const prevUrl = 'videos/' + videos[prevIdx];
+    // avoid re-fetching if already warmed for this exact file
+    if(els.preloadVid.dataset.url !== nextUrl){
+      els.preloadVid.src = nextUrl;
+      els.preloadVid.dataset.url = nextUrl;
+      els.preloadVid.load();
+    }
+    if(nextIdx !== prevIdx && els.preloadPrevVid.dataset.url !== prevUrl){
+      els.preloadPrevVid.src = prevUrl;
+      els.preloadPrevVid.dataset.url = prevUrl;
+      els.preloadPrevVid.load();
+    }
+  }
+
   function loadVideo(index){
     vIndex = ((index % videos.length) + videos.length) % videos.length;
     els.vid.src = 'videos/' + videos[vIndex];
@@ -292,6 +315,7 @@
     els.vid.loop = !autoplay;
     els.vid.play().catch(()=>{});
     els.counter.textContent = (vIndex+1) + ' / ' + videos.length;
+    preloadNeighbors();
   }
 
   function goNext(){ loadVideo(vIndex+1); }
