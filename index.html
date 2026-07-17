@@ -128,7 +128,7 @@
   }
   /* Autoplay toggle sits just below the mini phone-frame */
   #autoBtn{
-    position:absolute; left:50%; top:87%;
+    position:absolute; left:50%; top:0;
     transform:translateX(-50%);
     display:flex; align-items:center; gap:7px;
     font-size:13px; font-weight:600; letter-spacing:0.02em;
@@ -137,8 +137,10 @@
     padding:8px 16px 8px 12px; border-radius:20px;
     cursor:pointer; user-select:none;
     z-index:20;
-    transition:opacity 0.3s ease;
+    opacity:0;
+    transition:opacity 0.3s ease, top 0.2s ease;
   }
+  #autoBtn.ready{ opacity:1; }
   #phone.videoFull #autoBtn, #phone.photoFull #autoBtn{ opacity:0; pointer-events:none; }
   #autoBtn .dot{
     width:8px; height:8px; border-radius:50%;
@@ -336,6 +338,16 @@
     setTimeout(()=> els.playIcon.classList.remove('show'), 450);
   }
 
+  function positionAutoBtn(){
+    const frameRect = els.miniPhone.getBoundingClientRect();
+    const phoneRect = phoneEl.getBoundingClientRect();
+    const bottomRelative = frameRect.bottom - phoneRect.top;
+    els.autoBtn.style.top = (bottomRelative + 16) + 'px';
+    els.autoBtn.classList.add('ready');
+  }
+  window.addEventListener('resize', positionAutoBtn);
+  window.addEventListener('orientationchange', () => setTimeout(positionAutoBtn, 200));
+
   function setView(next){
     view = next;
     phoneEl.classList.remove('videoFull','photoFull');
@@ -433,6 +445,7 @@
       els.autoBtn.classList.add('on');
       loadVideo(0);
       startPhotoCycle();
+      positionAutoBtn();
     })
     .catch(err => {
       els.loadText.textContent = 'Could not load manifest.json';
