@@ -10,9 +10,9 @@
   :root{
     --bg:#0a0a0c;
     --ink:#f4f2ee;
-    --dim:rgba(244,242,238,0.55);
+    --dim:rgba(244,242,238,0.6);
     --accent:#ffb020;
-    --glass:rgba(10,10,12,0.35);
+    --glass:rgba(10,10,12,0.4);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{
@@ -25,7 +25,6 @@
     display:flex; align-items:center; justify-content:center;
     background:#000;
   }
-  /* Phone-format frame: full-bleed on real phones, centered phone shape on desktop */
   #phone{
     position:relative;
     width:100%; height:100%;
@@ -36,44 +35,92 @@
     box-shadow:0 0 60px rgba(0,0,0,0.6);
   }
   @media (min-width:640px) and (min-height:640px){
-    #phone{
-      border-radius:36px;
-      border:1px solid rgba(255,255,255,0.08);
-    }
+    #phone{ border-radius:36px; border:1px solid rgba(255,255,255,0.08); }
   }
 
-  /* Background photo layers, cross-fade between two */
+  /* Full-screen photo background */
   .bgLayer{
     position:absolute; inset:0;
     background-size:cover; background-position:center;
-    filter:brightness(0.55) saturate(1.05);
-    transition:opacity 1.4s ease;
+    filter:brightness(0.9) saturate(1.05);
+    transition:opacity 1.4s ease, filter 0.5s ease;
     opacity:0;
   }
   .bgLayer.active{opacity:1;}
   #bgScrim{
     position:absolute; inset:0;
-    background:radial-gradient(120% 90% at 50% 15%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.85) 100%);
+    background:linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 25%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.55) 100%);
+    transition:opacity 0.4s ease;
+    pointer-events:none;
+  }
+  #phone.photoFull #bgScrim{ opacity:0.35; }
+
+  /* Mini phone-frame video player, floats over the photo */
+  #miniPhone{
+    position:absolute;
+    left:50%; top:56%;
+    width:56%;
+    aspect-ratio: 9 / 19.5;
+    transform:translate(-50%,-50%);
+    border-radius:32px;
+    border:6px solid rgba(4,4,6,0.92);
+    box-shadow:0 24px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
+    overflow:hidden;
+    background:#000;
+    z-index:15;
+    cursor:pointer;
+    transition:left 0.45s cubic-bezier(.22,.9,.32,1),
+               top 0.45s cubic-bezier(.22,.9,.32,1),
+               width 0.45s cubic-bezier(.22,.9,.32,1),
+               height 0.45s cubic-bezier(.22,.9,.32,1),
+               border-radius 0.45s cubic-bezier(.22,.9,.32,1),
+               border 0.3s ease,
+               box-shadow 0.3s ease,
+               opacity 0.3s ease,
+               transform 0.45s cubic-bezier(.22,.9,.32,1);
+  }
+  #miniPhone .notch{
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    width:34%; height:16px; background:rgba(4,4,6,0.95);
+    border-radius:10px; z-index:2;
+  }
+  #miniPhone video{
+    width:100%; height:100%; object-fit:cover; display:block;
   }
 
-  /* Video */
-  #videoWrap{
-    position:absolute; inset:0;
-    display:flex; align-items:center; justify-content:center;
-  }
-  video{
+  #phone.videoFull #miniPhone{
+    left:50%; top:50%;
     width:100%; height:100%;
-    object-fit:contain;
-    background:transparent;
+    aspect-ratio:auto;
+    border-radius:0; border:none; box-shadow:none;
+    transform:translate(-50%,-50%);
+  }
+  #phone.videoFull #miniPhone video{ object-fit:contain; }
+  #phone.videoFull #miniPhone .notch{ opacity:0; }
+  #phone.photoFull #miniPhone{
+    opacity:0; pointer-events:none;
+    transform:translate(-50%,-50%) scale(0.8);
   }
 
-  /* Top bar */
+  /* collapse button, shown only in videoFull */
+  #collapseBtn{
+    position:absolute; top:calc(env(safe-area-inset-top,0px) + 14px); left:16px;
+    z-index:26; width:34px; height:34px; border-radius:50%;
+    background:var(--glass); backdrop-filter:blur(8px);
+    display:none; align-items:center; justify-content:center;
+    color:#fff; font-size:18px;
+  }
+  #phone.videoFull #collapseBtn{ display:flex; }
+
+  /* Top bar (autoplay toggle + counter) - hidden while photoFull */
   #topBar{
     position:absolute; top:0; left:0; right:0;
     display:flex; align-items:center; justify-content:space-between;
     padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 10px;
     z-index:20;
+    transition:opacity 0.3s ease;
   }
+  #phone.photoFull #topBar{ opacity:0; pointer-events:none; }
   #counter{
     font-size:13px; letter-spacing:0.02em; color:var(--dim);
     background:var(--glass); backdrop-filter:blur(8px);
@@ -92,37 +139,19 @@
     background:rgba(255,255,255,0.3);
     transition:background 0.2s ease, box-shadow 0.2s ease;
   }
-  #autoBtn.on .dot{
-    background:var(--accent);
-    box-shadow:0 0 8px var(--accent);
-  }
+  #autoBtn.on .dot{ background:var(--accent); box-shadow:0 0 8px var(--accent); }
 
-  /* Bottom hint / progress */
   #bottomBar{
     position:absolute; left:0; right:0; bottom:0;
     padding:0 18px calc(env(safe-area-inset-bottom,0px) + 18px);
     z-index:20;
     display:flex; flex-direction:column; gap:10px;
+    transition:opacity 0.3s ease;
   }
-  #track{
-    height:3px; width:100%; background:rgba(255,255,255,0.18);
-    border-radius:2px; overflow:hidden;
-  }
-  #trackFill{
-    height:100%; width:0%; background:var(--ink);
-    transition:width 0.1s linear;
-  }
-  #hint{
-    font-size:12.5px; color:var(--dim); text-align:center;
-    letter-spacing:0.02em;
-  }
-
-  /* Swipe direction indicator (subtle) */
-  .edgeFade{
-    position:absolute; left:0; right:0; height:70px; z-index:15;
-    pointer-events:none;
-  }
-  .edgeFade.top{top:0; background:linear-gradient(to bottom, rgba(0,0,0,0.35), transparent);}
+  #phone.photoFull #bottomBar{ opacity:0; pointer-events:none; }
+  #track{ height:3px; width:100%; background:rgba(255,255,255,0.18); border-radius:2px; overflow:hidden; }
+  #trackFill{ height:100%; width:0%; background:var(--ink); transition:width 0.1s linear; }
+  #hint{ font-size:12.5px; color:var(--dim); text-align:center; letter-spacing:0.02em; }
 
   #playIcon{
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) scale(0.8);
@@ -132,8 +161,8 @@
     opacity:0; transition:opacity 0.25s ease, transform 0.25s ease;
     pointer-events:none;
   }
-  #playIcon.show{opacity:1; transform:translate(-50%,-50%) scale(1);}
-  #playIcon svg{width:26px; height:26px; fill:#fff;}
+  #playIcon.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+  #playIcon svg{ width:26px; height:26px; fill:#fff; }
 
   #loadWrap{
     position:absolute; inset:0; z-index:30;
@@ -147,7 +176,7 @@
     border-top-color:var(--accent);
     animation:spin 0.8s linear infinite;
   }
-  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes spin{ to{ transform:rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -158,12 +187,15 @@
     <div id="bg2" class="bgLayer"></div>
     <div id="bgScrim"></div>
 
-    <div id="videoWrap">
+    <div id="miniPhone">
+      <div class="notch"></div>
       <video id="vid" playsinline webkit-playsinline preload="auto"></video>
       <div id="playIcon">
         <svg id="playIconSvg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
       </div>
     </div>
+
+    <div id="collapseBtn">&#8964;</div>
 
     <div id="topBar">
       <div id="counter">1 / 1</div>
@@ -172,7 +204,7 @@
 
     <div id="bottomBar">
       <div id="track"><div id="trackFill"></div></div>
-      <div id="hint">Swipe up for next · tap to pause</div>
+      <div id="hint">Tap photo or video to expand · swipe for next</div>
     </div>
 
     <div id="loadWrap">
@@ -184,10 +216,13 @@
 
 <script>
 (function(){
+  const phoneEl = document.getElementById('phone');
   const els = {
     bg1: document.getElementById('bg1'),
     bg2: document.getElementById('bg2'),
     vid: document.getElementById('vid'),
+    miniPhone: document.getElementById('miniPhone'),
+    collapseBtn: document.getElementById('collapseBtn'),
     counter: document.getElementById('counter'),
     autoBtn: document.getElementById('autoBtn'),
     autoLabel: document.getElementById('autoLabel'),
@@ -196,19 +231,20 @@
     trackFill: document.getElementById('trackFill'),
     loadWrap: document.getElementById('loadWrap'),
     loadText: document.getElementById('loadText'),
-    phone: document.getElementById('phone'),
   };
 
   const ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
   const ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 
-  let videos = [];      // shuffled order of video filenames
-  let photos = [];      // shuffled order of photo filenames
+  let videos = [];
+  let photos = [];
   let vIndex = 0;
   let pIndex = 0;
-  let activeBg = 1;      // which bg layer is currently visible
-  let autoplay = true;   // true = advance to next on end, false = loop current
+  let activeBg = 1;
+  let autoplay = true;
   let photoTimer = null;
+  let view = 'dual'; // 'dual' | 'videoFull' | 'photoFull'
+  let wasPlayingBeforePhotoFull = true;
 
   function shuffle(arr){
     const a = arr.slice();
@@ -223,7 +259,6 @@
     const showEl = activeBg === 1 ? els.bg2 : els.bg1;
     const hideEl = activeBg === 1 ? els.bg1 : els.bg2;
     showEl.style.backgroundImage = `url("${url}")`;
-    // force reflow so transition triggers
     void showEl.offsetWidth;
     showEl.classList.add('active');
     hideEl.classList.remove('active');
@@ -247,8 +282,8 @@
     vIndex = ((index % videos.length) + videos.length) % videos.length;
     els.vid.src = 'videos/' + videos[vIndex];
     els.vid.currentTime = 0;
-    els.vid.loop = !autoplay; // manual mode loops current clip
-    els.vid.play().catch(()=>{ /* wait for user gesture */ });
+    els.vid.loop = !autoplay;
+    els.vid.play().catch(()=>{});
     els.counter.textContent = (vIndex+1) + ' / ' + videos.length;
   }
 
@@ -257,9 +292,7 @@
 
   els.vid.addEventListener('ended', function(){
     if(autoplay){ goNext(); }
-    // if not autoplay, loop=true already handles repeat
   });
-
   els.vid.addEventListener('timeupdate', function(){
     if(els.vid.duration){
       els.trackFill.style.width = (els.vid.currentTime/els.vid.duration*100) + '%';
@@ -272,25 +305,62 @@
     setTimeout(()=> els.playIcon.classList.remove('show'), 450);
   }
 
-  els.vid.addEventListener('click', function(){
-    if(els.vid.paused){ els.vid.play(); flashPlayIcon(true); }
-    else { els.vid.pause(); flashPlayIcon(false); }
+  function setView(next){
+    view = next;
+    phoneEl.classList.remove('videoFull','photoFull');
+    if(view === 'videoFull') phoneEl.classList.add('videoFull');
+    if(view === 'photoFull') phoneEl.classList.add('photoFull');
+
+    if(view === 'photoFull'){
+      wasPlayingBeforePhotoFull = !els.vid.paused;
+      els.vid.pause();
+    } else if(wasPlayingBeforePhotoFull){
+      els.vid.play().catch(()=>{});
+    }
+  }
+
+  // Tap on the mini phone / video area
+  els.miniPhone.addEventListener('click', function(e){
+    e.stopPropagation();
+    if(view === 'dual'){
+      setView('videoFull');
+    } else if(view === 'videoFull'){
+      if(els.vid.paused){ els.vid.play(); flashPlayIcon(true); }
+      else { els.vid.pause(); flashPlayIcon(false); }
+    }
   });
 
-  els.autoBtn.addEventListener('click', function(){
+  // Collapse button (only visible in videoFull)
+  els.collapseBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    setView('dual');
+  });
+
+  // Tap anywhere else on the phone stage = photo interactions
+  phoneEl.addEventListener('click', function(e){
+    if(view === 'photoFull'){
+      setView('dual');
+    } else if(view === 'dual'){
+      // click landed on background, not on miniPhone (miniPhone stops propagation)
+      setView('photoFull');
+    }
+  });
+
+  els.autoBtn.addEventListener('click', function(e){
+    e.stopPropagation();
     autoplay = !autoplay;
     els.autoBtn.classList.toggle('on', autoplay);
     els.autoLabel.textContent = autoplay ? 'Autoplay' : 'Loop';
     els.vid.loop = !autoplay;
   });
 
-  // Swipe handling (vertical)
+  // Swipe handling (vertical) - works in dual and videoFull
   let touchStartY = null;
-  els.phone.addEventListener('touchstart', function(e){
+  phoneEl.addEventListener('touchstart', function(e){
     touchStartY = e.touches[0].clientY;
   }, {passive:true});
-  els.phone.addEventListener('touchend', function(e){
-    if(touchStartY === null) return;
+  phoneEl.addEventListener('touchend', function(e){
+    if(touchStartY === null || view === 'photoFull') return;
     const dy = e.changedTouches[0].clientY - touchStartY;
     if(Math.abs(dy) > 60){
       if(dy < 0) goNext(); else goPrev();
@@ -298,24 +368,23 @@
     touchStartY = null;
   }, {passive:true});
 
-  // Keyboard for desktop testing
   window.addEventListener('keydown', function(e){
+    if(view === 'photoFull') return;
     if(e.key === 'ArrowDown' || e.key === 'ArrowRight') goNext();
     if(e.key === 'ArrowUp' || e.key === 'ArrowLeft') goPrev();
-    if(e.key === ' '){ e.preventDefault(); els.vid.click(); }
+    if(e.key === ' '){ e.preventDefault(); els.miniPhone.click(); }
+    if(e.key === 'Escape') setView('dual');
   });
 
-  // Wheel for desktop trackpad/mouse
   let wheelLock = false;
   window.addEventListener('wheel', function(e){
-    if(wheelLock) return;
+    if(wheelLock || view === 'photoFull') return;
     if(Math.abs(e.deltaY) < 30) return;
     wheelLock = true;
     if(e.deltaY > 0) goNext(); else goPrev();
     setTimeout(()=> wheelLock = false, 500);
   }, {passive:true});
 
-  // Init
   fetch('manifest.json?t=' + Date.now())
     .then(r => r.json())
     .then(data => {
@@ -324,6 +393,10 @@
       if(videos.length === 0){
         els.loadText.textContent = 'No videos found — upload some to /videos';
         return;
+      }
+      if(photos.length === 0){
+        els.loadText.textContent = 'No photos found — upload some to /photos';
+        // still show video even without photos
       }
       els.loadWrap.style.display = 'none';
       els.autoBtn.classList.add('on');
@@ -335,7 +408,6 @@
       console.error(err);
     });
 
-  // Register service worker for installability (best-effort)
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js').catch(()=>{});
   }

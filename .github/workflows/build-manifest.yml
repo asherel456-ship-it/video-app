@@ -33,7 +33,7 @@ jobs:
               return out
 
           videos = list_files('videos', {'.mp4', '.mov', '.webm', '.m4v'})
-          photos = list_files('photos', {'.jpg', '.jpeg', '.png', '.webp'})
+          photos = list_files('photos', {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'})
 
           with open('manifest.json', 'w') as f:
               json.dump({'videos': videos, 'photos': photos}, f, indent=2)
