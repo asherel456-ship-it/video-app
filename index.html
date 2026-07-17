@@ -58,8 +58,8 @@
   /* Mini phone-frame video player, floats over the photo */
   #miniPhone{
     position:absolute;
-    left:50%; top:56%;
-    width:56%;
+    left:50%; top:50%;
+    width:66%;
     aspect-ratio: 9 / 19.5;
     transform:translate(-50%,-50%);
     border-radius:32px;
@@ -115,7 +115,7 @@
   /* Top bar (autoplay toggle + counter) - hidden while photoFull */
   #topBar{
     position:absolute; top:0; left:0; right:0;
-    display:flex; align-items:center; justify-content:space-between;
+    display:flex; align-items:center; justify-content:flex-start;
     padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 10px;
     z-index:20;
     transition:opacity 0.3s ease;
@@ -126,14 +126,20 @@
     background:var(--glass); backdrop-filter:blur(8px);
     padding:6px 12px; border-radius:20px;
   }
+  /* Autoplay toggle sits just below the mini phone-frame */
   #autoBtn{
+    position:absolute; left:50%; top:87%;
+    transform:translateX(-50%);
     display:flex; align-items:center; gap:7px;
     font-size:13px; font-weight:600; letter-spacing:0.02em;
     background:var(--glass); backdrop-filter:blur(8px);
     color:var(--ink); border:1px solid rgba(255,255,255,0.12);
-    padding:7px 14px 7px 10px; border-radius:20px;
+    padding:8px 16px 8px 12px; border-radius:20px;
     cursor:pointer; user-select:none;
+    z-index:20;
+    transition:opacity 0.3s ease;
   }
+  #phone.videoFull #autoBtn, #phone.photoFull #autoBtn{ opacity:0; pointer-events:none; }
   #autoBtn .dot{
     width:8px; height:8px; border-radius:50%;
     background:rgba(255,255,255,0.3);
@@ -197,9 +203,10 @@
 
     <div id="collapseBtn">&#8964;</div>
 
+    <div id="autoBtn"><span class="dot"></span><span id="autoLabel">Autoplay</span></div>
+
     <div id="topBar">
       <div id="counter">1 / 1</div>
-      <div id="autoBtn"><span class="dot"></span><span id="autoLabel">Autoplay</span></div>
     </div>
 
     <div id="bottomBar">
