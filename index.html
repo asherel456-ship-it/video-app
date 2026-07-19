@@ -271,6 +271,7 @@
   }
   #heartPop svg{ width:84px; height:84px; fill:var(--heart); filter:drop-shadow(0 4px 14px rgba(0,0,0,0.4)); }
   #heartPop.show{ opacity:1; transform:translate(-50%,-50%) scale(1); transition:opacity 0.15s ease, transform 0.15s cubic-bezier(.2,1.6,.4,1); }
+  #heartPop.super svg{ fill:#ffd23f; width:104px; height:104px; filter:drop-shadow(0 4px 18px rgba(255,176,32,0.55)); }
 
   /* Top bar (counter + swap + settings gear) - hidden while photoFull */
   #topBar{
@@ -612,7 +613,7 @@
   }
   function saveQueueState(){
     try{
-      localStorage.setItem(QUEUE_KEY, JSON.stringify({ key: computeQueueKey(), order: videos, pos: queuePos }));
+      localStorage.setItem(QUEUE_KEY, JSON.stringify({ key: computeQueueKey(), seen: Array.from(seenSet) }));
     }catch(e){}
   }
   function loadQueueState(){
@@ -636,8 +637,10 @@
   let favMode = false;
   let favThreshold = 'top50';
   let lastLikedFile = null;
+  let lastLikeAmount = 1;
   let undoTimer = null;
   let inverted = false;  // video-as-wallpaper mode
+  let seenSet = new Set(); // files shown in the current no-repeat cycle
 
   // ---------- Likes / watched storage ----------
   function loadLikes(){
@@ -676,35 +679,42 @@
   // back always retraces exactly what was just playing — never a fresh random pick.
   let history = [];
   let histPos = -1;
-  let queuePos = 0;
+  let pendingNextFile = null; // caches the next pick so preload and playback always agree
 
   function currentFile(){ return (histPos >= 0 && histPos < history.length) ? history[histPos] : null; }
   function curVidFile(){ return currentFile(); }
 
-  function nextFrontierFile(){
+  function computeFreshPick(){
     if(videos.length === 0) return null;
-    if(queuePos >= videos.length){
-      const lastFile = history[history.length - 1];
-      let reshuffled = shuffle(videos);
-      let guard = 0;
-      while(reshuffled[0] === lastFile && guard < 10){
-        reshuffled = shuffle(videos);
-        guard++;
-      }
-      videos = reshuffled;
-      queuePos = 0;
+    let remaining = videos.filter(f => !seenSet.has(f));
+    if(remaining.length === 0){
+      seenSet = new Set();
+      remaining = videos.slice();
     }
-    const f = videos[queuePos];
-    queuePos++;
-    saveQueueState();
+    let idx = Math.floor(Math.random() * remaining.length);
+    let f = remaining[idx];
+    // avoid an immediate repeat of the clip we just watched, right at a cycle boundary
+    if(remaining.length > 1 && f === history[history.length - 1]){
+      idx = (idx + 1) % remaining.length;
+      f = remaining[idx];
+    }
     return f;
   }
 
   function peekNextFile(){
     if(histPos < history.length - 1) return history[histPos + 1];
-    if(videos.length === 0) return null;
-    const idx = queuePos >= videos.length ? 0 : queuePos;
-    return videos[idx];
+    if(pendingNextFile === null) pendingNextFile = computeFreshPick();
+    return pendingNextFile;
+  }
+
+  function consumeNextFrontier(){
+    const f = pendingNextFile !== null ? pendingNextFile : computeFreshPick();
+    pendingNextFile = null;
+    if(f){
+      seenSet.add(f);
+      saveQueueState();
+    }
+    return f;
   }
 
   function refreshLikeBtn(){
@@ -714,26 +724,30 @@
     els.likeCount.textContent = c > 0 ? c : '';
   }
 
-  function showUndoToast(file){
+  function showUndoToast(file, amount){
     lastLikedFile = file;
+    lastLikeAmount = amount || 1;
+    const msgEl = els.undoToast.querySelector('span');
+    if(msgEl) msgEl.textContent = lastLikeAmount > 1 ? ('Super liked +' + lastLikeAmount + ' \u2B50') : 'Liked \u2665';
     els.undoToast.classList.add('show');
     if(undoTimer) clearTimeout(undoTimer);
     undoTimer = setTimeout(()=>{ els.undoToast.classList.remove('show'); }, 3000);
   }
 
-  function likeFile(file){
+  function likeFile(file, amount){
     if(!file) return;
-    likes[file] = (likes[file] || 0) + 1;
+    const n = amount || 1;
+    likes[file] = (likes[file] || 0) + n;
     saveLikes();
     refreshLikeBtn();
-    showUndoToast(file);
+    showUndoToast(file, n);
   }
 
   els.undoBtn.addEventListener('click', function(e){
     e.stopPropagation();
     if(!lastLikedFile) return;
     if(likes[lastLikedFile] > 0){
-      likes[lastLikedFile]--;
+      likes[lastLikedFile] = Math.max(0, likes[lastLikedFile] - lastLikeAmount);
       if(likes[lastLikedFile] <= 0) delete likes[lastLikedFile];
       saveLikes();
       refreshLikeBtn();
@@ -742,12 +756,35 @@
     if(undoTimer) clearTimeout(undoTimer);
   });
 
+  // Quick tap = +1 like. Press and hold = super like, +2.
+  let likeBtnPressTimer = null;
+  let superLikeFired = false;
+  const SUPER_LIKE_HOLD_MS = 550;
+
+  function startLikeBtnPress(){
+    superLikeFired = false;
+    likeBtnPressTimer = setTimeout(function(){
+      superLikeFired = true;
+      likeFile(curVidFile(), 2);
+      showHeartPop(true);
+    }, SUPER_LIKE_HOLD_MS);
+  }
+  function cancelLikeBtnPress(){
+    if(likeBtnPressTimer){ clearTimeout(likeBtnPressTimer); likeBtnPressTimer = null; }
+  }
+  els.likeBtn.addEventListener('pointerdown', function(e){ startLikeBtnPress(); });
+  els.likeBtn.addEventListener('pointerup', cancelLikeBtnPress);
+  els.likeBtn.addEventListener('pointerleave', cancelLikeBtnPress);
+  els.likeBtn.addEventListener('pointercancel', cancelLikeBtnPress);
+
   els.likeBtn.addEventListener('click', function(e){
     e.stopPropagation();
-    likeFile(curVidFile());
+    if(superLikeFired){ superLikeFired = false; return; } // already handled by the long-press
+    likeFile(curVidFile(), 1);
   });
 
-  function showHeartPop(){
+  function showHeartPop(isSuper){
+    els.heartPop.classList.toggle('super', !!isSuper);
     els.heartPop.classList.remove('show');
     void els.heartPop.offsetWidth;
     els.heartPop.classList.add('show');
@@ -789,17 +826,17 @@
       return false;
     }
     els.loadWrap.style.display = 'none';
+    videos = pool.slice();
 
     const wantedKey = (favMode ? ('fav:' + favThreshold) : 'all') + '|' + pool.slice().sort().join(',');
     const saved = loadQueueState();
-    if(saved && saved.key === wantedKey && Array.isArray(saved.order) && saved.order.length === pool.length){
-      videos = saved.order;
-      queuePos = (typeof saved.pos === 'number' && saved.pos <= videos.length) ? saved.pos : 0;
+    if(saved && saved.key === wantedKey && Array.isArray(saved.seen)){
+      seenSet = new Set(saved.seen.filter(f => pool.includes(f)));
     } else {
-      videos = shuffle(pool);
-      queuePos = 0;
+      seenSet = new Set();
       saveQueueState();
     }
+    pendingNextFile = null;
     delete els.vidA.dataset.url;
     delete els.vidB.dataset.url;
     return true;
@@ -953,7 +990,8 @@
   function startPlayback(){
     history = [];
     histPos = -1;
-    const f = nextFrontierFile();
+    pendingNextFile = null;
+    const f = consumeNextFrontier();
     if(!f) return;
     history.push(f);
     histPos = 0;
@@ -969,7 +1007,7 @@
       showFile(history[histPos], 1);
     } else {
       // At the leading edge: mint one new clip from the frontier queue.
-      const f = nextFrontierFile();
+      const f = consumeNextFrontier();
       if(!f) return;
       history.push(f);
       histPos = history.length - 1;
