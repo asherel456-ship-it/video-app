@@ -13,6 +13,7 @@
     --dim:rgba(244,242,238,0.6);
     --accent:#ffb020;
     --glass:rgba(10,10,12,0.4);
+    --heart:#ff3b5c;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{
@@ -38,6 +39,43 @@
     #phone{ border-radius:36px; border:1px solid rgba(255,255,255,0.08); }
   }
 
+  /* ===== Photo stage: fullscreen by default, shrinks to mini-frame when inverted ===== */
+  #photoStage{
+    position:absolute;
+    left:0; top:0; width:100%; height:100%;
+    aspect-ratio:auto;
+    border-radius:0; border:none; box-shadow:none;
+    transform:none;
+    overflow:hidden;
+    z-index:5;
+    transition:left 0.45s cubic-bezier(.22,.9,.32,1),
+               top 0.45s cubic-bezier(.22,.9,.32,1),
+               width 0.45s cubic-bezier(.22,.9,.32,1),
+               height 0.45s cubic-bezier(.22,.9,.32,1),
+               border-radius 0.45s cubic-bezier(.22,.9,.32,1),
+               border 0.3s ease,
+               box-shadow 0.3s ease,
+               transform 0.45s cubic-bezier(.22,.9,.32,1);
+  }
+  #phone.inverted #photoStage{
+    left:50%; top:50%;
+    width:66%; height:auto;
+    aspect-ratio:9 / 19.5;
+    transform:translate(-50%,-50%);
+    border-radius:32px;
+    border:6px solid rgba(4,4,6,0.92);
+    box-shadow:0 24px 50px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
+    z-index:16;
+    cursor:pointer;
+  }
+  .photoNotch{
+    position:absolute; top:8px; left:50%; transform:translateX(-50%);
+    width:34%; height:16px; background:rgba(4,4,6,0.95);
+    border-radius:10px; z-index:6; opacity:0;
+    transition:opacity 0.2s ease;
+  }
+  #phone.inverted .photoNotch{ opacity:1; }
+
   /* Full-screen photo background */
   .bgLayer{
     position:absolute; inset:0;
@@ -55,7 +93,22 @@
   }
   #phone.photoFull #bgScrim{ opacity:0.35; }
 
-  /* Mini phone-frame video player, floats over the photo */
+  /* Ambient color glow sampled from the playing video, sits behind the frame */
+  #glow{
+    position:absolute; left:50%; top:50%;
+    width:88%; aspect-ratio:9 / 19.5;
+    transform:translate(-50%,-50%);
+    border-radius:40px;
+    filter:blur(46px);
+    opacity:0.5;
+    z-index:14;
+    pointer-events:none;
+    background-color:#1a1a1a;
+    transition:background-color 0.7s ease, opacity 0.4s ease;
+  }
+  #phone.videoFull #glow, #phone.photoFull #glow, #phone.inverted #glow{ opacity:0; }
+
+  /* Mini phone-frame video player, floats over the photo (or becomes fullscreen bg when inverted) */
   #miniPhone{
     position:absolute;
     left:50%; top:50%;
@@ -100,6 +153,19 @@
     width:100%; height:100%; object-fit:cover; display:block;
   }
 
+  /* Skeleton shimmer while a clip is buffering, instead of a black frame */
+  .shimmer{
+    position:absolute; inset:0; z-index:3; display:none;
+    background:linear-gradient(100deg, rgba(255,255,255,0.03) 20%, rgba(255,255,255,0.14) 42%, rgba(255,255,255,0.03) 60%);
+    background-size:200% 100%;
+    animation:shimmerMove 1.4s infinite;
+  }
+  .shimmer.show{ display:block; }
+  @keyframes shimmerMove{
+    0%{ background-position:200% 0; }
+    100%{ background-position:-200% 0; }
+  }
+
   #phone.videoFull #miniPhone{
     left:50%; top:50%;
     width:100%; height:100%;
@@ -113,6 +179,18 @@
     opacity:0; pointer-events:none;
     transform:translate(-50%,-50%) scale(0.8);
   }
+
+  /* Inverted: video becomes fullscreen background */
+  #phone.inverted #miniPhone{
+    left:0; top:0;
+    width:100%; height:100%;
+    aspect-ratio:auto;
+    border-radius:0; border:none; box-shadow:none;
+    transform:none;
+    z-index:5;
+  }
+  #phone.inverted #miniPhone .vidSlide video{ object-fit:cover; }
+  #phone.inverted #miniPhone .notch{ opacity:0; }
 
   /* collapse button, shown only in videoFull */
   #collapseBtn{
@@ -135,10 +213,20 @@
   }
   #soundHint.show{ opacity:1; }
 
-  /* Top bar (autoplay toggle + counter) - hidden while photoFull */
+  /* Big heart pop on double-tap */
+  #heartPop{
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%) scale(0.5);
+    z-index:24; opacity:0; pointer-events:none;
+    transition:opacity 0.25s ease, transform 0.25s ease;
+  }
+  #heartPop svg{ width:84px; height:84px; fill:var(--heart); filter:drop-shadow(0 4px 14px rgba(0,0,0,0.4)); }
+  #heartPop.show{ opacity:1; transform:translate(-50%,-50%) scale(1); transition:opacity 0.15s ease, transform 0.15s cubic-bezier(.2,1.6,.4,1); }
+
+  /* Top bar (counter + swap + settings gear) - hidden while photoFull */
   #topBar{
     position:absolute; top:0; left:0; right:0;
-    display:flex; align-items:center; justify-content:flex-start;
+    display:flex; align-items:center; justify-content:space-between;
     padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 10px;
     z-index:20;
     transition:opacity 0.3s ease;
@@ -149,22 +237,46 @@
     background:var(--glass); backdrop-filter:blur(8px);
     padding:6px 12px; border-radius:20px;
   }
-  /* Autoplay toggle sits just below the mini phone-frame */
-  #autoBtn{
+  #topBarRight{ display:flex; align-items:center; gap:8px; }
+  #invertBtn, #settingsBtn{
+    width:30px; height:30px; border-radius:50%;
+    background:var(--glass); backdrop-filter:blur(8px);
+    display:flex; align-items:center; justify-content:center;
+    font-size:15px; cursor:pointer;
+    border:1px solid rgba(255,255,255,0.1);
+  }
+  #invertBtn.on{ background:rgba(255,176,32,0.25); border-color:rgba(255,176,32,0.4); }
+
+  /* Action row: like button + autoplay toggle, sits just below the mini phone-frame */
+  #actionRow{
     position:absolute; left:50%; top:0;
     transform:translateX(-50%);
+    display:flex; align-items:center; gap:8px;
+    z-index:20;
+    opacity:0;
+    transition:opacity 0.3s ease, top 0.2s ease;
+  }
+  #actionRow.ready{ opacity:1; }
+  #phone.videoFull #actionRow, #phone.photoFull #actionRow, #phone.inverted #actionRow{ opacity:0; pointer-events:none; }
+  #likeBtn{
+    display:flex; align-items:center; gap:6px;
+    font-size:13px; font-weight:600;
+    background:var(--glass); backdrop-filter:blur(8px);
+    color:var(--ink); border:1px solid rgba(255,255,255,0.12);
+    padding:8px 14px; border-radius:20px;
+    cursor:pointer; user-select:none;
+  }
+  #likeBtn svg{ width:16px; height:16px; fill:none; stroke:var(--dim); stroke-width:2; transition:fill 0.15s ease, stroke 0.15s ease; }
+  #likeBtn.liked svg{ fill:var(--heart); stroke:var(--heart); }
+  #likeBtn .likeCount{ min-width:10px; text-align:left; }
+  #autoBtn{
     display:flex; align-items:center; gap:7px;
     font-size:13px; font-weight:600; letter-spacing:0.02em;
     background:var(--glass); backdrop-filter:blur(8px);
     color:var(--ink); border:1px solid rgba(255,255,255,0.12);
     padding:8px 16px 8px 12px; border-radius:20px;
     cursor:pointer; user-select:none;
-    z-index:20;
-    opacity:0;
-    transition:opacity 0.3s ease, top 0.2s ease;
   }
-  #autoBtn.ready{ opacity:1; }
-  #phone.videoFull #autoBtn, #phone.photoFull #autoBtn{ opacity:0; pointer-events:none; }
   #autoBtn .dot{
     width:8px; height:8px; border-radius:50%;
     background:rgba(255,255,255,0.3);
@@ -195,6 +307,82 @@
   #playIcon.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
   #playIcon svg{ width:26px; height:26px; fill:#fff; }
 
+  /* Undo toast for accidental likes */
+  #undoToast{
+    position:absolute; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 78px);
+    transform:translateX(-50%) translateY(10px);
+    z-index:32; display:flex; align-items:center; gap:12px;
+    background:rgba(20,20,22,0.92); backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,0.1);
+    padding:10px 10px 10px 16px; border-radius:22px;
+    font-size:13px; opacity:0; pointer-events:none;
+    transition:opacity 0.25s ease, transform 0.25s ease;
+  }
+  #undoToast.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+  #undoToast button{
+    background:none; border:none; color:var(--accent); font-weight:700;
+    font-size:13px; padding:6px 10px; cursor:pointer;
+  }
+
+  /* Settings panel */
+  #settingsOverlay{
+    position:absolute; inset:0; z-index:35;
+    background:rgba(0,0,0,0.55);
+    display:none; align-items:flex-end; justify-content:center;
+  }
+  #settingsOverlay.show{ display:flex; }
+  #settingsPanel{
+    width:100%; max-height:80%;
+    background:#141416;
+    border-radius:22px 22px 0 0;
+    padding:18px 20px calc(env(safe-area-inset-bottom,0px) + 20px);
+    overflow-y:auto;
+    border-top:1px solid rgba(255,255,255,0.08);
+  }
+  #settingsPanel h3{ font-size:15px; margin:14px 0 8px; color:var(--ink); }
+  #settingsPanel h3:first-child{ margin-top:0; }
+  .settingsRow{ display:flex; align-items:center; justify-content:space-between; padding:8px 0; font-size:14px; }
+  .settingsClose{
+    display:flex; justify-content:flex-end; margin-bottom:4px;
+  }
+  .settingsClose span{
+    font-size:13px; color:var(--dim); padding:6px 10px; cursor:pointer;
+  }
+  #favToggle{ display:flex; align-items:center; gap:10px; }
+  .switch{
+    width:42px; height:24px; border-radius:14px; background:rgba(255,255,255,0.15);
+    position:relative; cursor:pointer; transition:background 0.2s ease;
+  }
+  .switch.on{ background:var(--accent); }
+  .switch .knob{
+    position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+    background:#fff; transition:left 0.2s ease;
+  }
+  .switch.on .knob{ left:20px; }
+  .radioRow{ display:flex; flex-direction:column; gap:2px; margin-top:4px; }
+  .radioOpt{ display:flex; align-items:center; gap:10px; padding:7px 0; font-size:13.5px; color:var(--dim); }
+  .radioOpt input{ accent-color:var(--accent); width:16px; height:16px; }
+  .radioOpt.active{ color:var(--ink); }
+  .settingsHint{ font-size:11.5px; color:var(--dim); opacity:0.75; margin-top:2px; line-height:1.4; }
+  .settingsBtnRow{ display:flex; gap:10px; margin-top:6px; }
+  .settingsBtn{
+    flex:1; padding:11px; border-radius:12px; border:1px solid rgba(255,255,255,0.12);
+    background:rgba(255,255,255,0.06); color:var(--ink); font-size:13.5px; font-weight:600;
+    cursor:pointer; text-align:center;
+  }
+  #likedList{ display:flex; flex-direction:column; gap:6px; margin-top:8px; max-height:180px; overflow-y:auto; }
+  .likedRow{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:12.5px; color:var(--dim); padding:6px 10px;
+    background:rgba(255,255,255,0.04); border-radius:10px;
+  }
+  .likedRow .fn{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; margin-right:8px; }
+  .likedRow .minus{
+    background:rgba(255,255,255,0.1); border:none; color:var(--ink);
+    width:24px; height:24px; border-radius:50%; font-size:14px; cursor:pointer; flex-shrink:0;
+  }
+  #likedEmpty{ font-size:13px; color:var(--dim); padding:6px 0; }
+
   #loadWrap{
     position:absolute; inset:0; z-index:30;
     display:flex; align-items:center; justify-content:center;
@@ -214,20 +402,31 @@
 
 <div id="stage">
   <div id="phone">
-    <div id="bg1" class="bgLayer"></div>
-    <div id="bg2" class="bgLayer"></div>
-    <div id="bgScrim"></div>
+
+    <div id="photoStage">
+      <div id="bg1" class="bgLayer"></div>
+      <div id="bg2" class="bgLayer"></div>
+      <div id="bgScrim"></div>
+      <div class="photoNotch"></div>
+    </div>
+
+    <div id="glow"></div>
 
     <div id="miniPhone">
       <div class="notch"></div>
       <div class="vidSlide" id="slideA">
         <video id="vidA" playsinline webkit-playsinline preload="auto" muted></video>
+        <div class="shimmer show"></div>
       </div>
       <div class="vidSlide offBelow" id="slideB">
         <video id="vidB" playsinline webkit-playsinline preload="auto" muted></video>
+        <div class="shimmer"></div>
       </div>
       <div id="playIcon">
         <svg id="playIconSvg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </div>
+      <div id="heartPop">
+        <svg viewBox="0 0 24 24"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.1 1.6 6.7 4.3 5.2 6.6 3.9 9.4 4.6 12 7.3c2.6-2.7 5.4-3.4 7.7-2.1 2.7 1.5 3.3 4.9 1.6 7.7C18.7 16.65 12 21 12 21z"/></svg>
       </div>
     </div>
 
@@ -235,15 +434,61 @@
 
     <div id="soundHint">&#128266; Sound on</div>
 
-    <div id="autoBtn"><span class="dot"></span><span id="autoLabel">Autoplay</span></div>
+    <div id="actionRow">
+      <div id="likeBtn">
+        <svg viewBox="0 0 24 24"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.1 1.6 6.7 4.3 5.2 6.6 3.9 9.4 4.6 12 7.3c2.6-2.7 5.4-3.4 7.7-2.1 2.7 1.5 3.3 4.9 1.6 7.7C18.7 16.65 12 21 12 21z"/></svg>
+        <span class="likeCount" id="likeCount"></span>
+      </div>
+      <div id="autoBtn"><span class="dot"></span><span id="autoLabel">Autoplay</span></div>
+    </div>
 
     <div id="topBar">
       <div id="counter">1 / 1</div>
+      <div id="topBarRight">
+        <div id="invertBtn" title="Swap video/photo">&#8646;</div>
+        <div id="settingsBtn">&#9881;</div>
+      </div>
     </div>
 
     <div id="bottomBar">
       <div id="track"><div id="trackFill"></div></div>
-      <div id="hint">Tap photo or video to expand · swipe for next</div>
+      <div id="hint">Swipe for next · double-tap to like · ⇄ swaps video/photo</div>
+    </div>
+
+    <div id="undoToast">
+      <span>Liked &#9829;</span>
+      <button id="undoBtn">Undo</button>
+    </div>
+
+    <div id="settingsOverlay">
+      <div id="settingsPanel">
+        <div class="settingsClose"><span id="settingsCloseBtn">Close ✕</span></div>
+
+        <h3>Favorites mode</h3>
+        <div class="settingsRow">
+          <div id="favToggle">
+            <div class="switch" id="favSwitch"><div class="knob"></div></div>
+            <span>Show only favorites</span>
+          </div>
+        </div>
+        <div class="radioRow" id="thresholdRow">
+          <label class="radioOpt"><input type="radio" name="favThresh" value="top50"><span>Top 50% most liked</span></label>
+          <label class="radioOpt"><input type="radio" name="favThresh" value="top20"><span>Top 20% most liked</span></label>
+          <label class="radioOpt"><input type="radio" name="favThresh" value="all"><span>Any video liked at least once</span></label>
+        </div>
+        <div class="settingsHint">Top 50%/20% are ranked among videos you've watched at least once — including ones with zero likes — sorted by like count.</div>
+
+        <h3>Backup</h3>
+        <div class="settingsBtnRow">
+          <div class="settingsBtn" id="backupBtn">Backup likes</div>
+          <div class="settingsBtn" id="restoreBtn">Restore backup</div>
+        </div>
+        <input type="file" id="restoreInput" accept="application/json" style="display:none">
+
+        <h3>Liked videos</h3>
+        <div id="likedEmpty">Nothing liked yet.</div>
+        <div id="likedList"></div>
+      </div>
     </div>
 
     <div id="loadWrap">
@@ -257,8 +502,10 @@
 (function(){
   const phoneEl = document.getElementById('phone');
   const els = {
+    photoStage: document.getElementById('photoStage'),
     bg1: document.getElementById('bg1'),
     bg2: document.getElementById('bg2'),
+    glow: document.getElementById('glow'),
     slideA: document.getElementById('slideA'),
     slideB: document.getElementById('slideB'),
     vidA: document.getElementById('vidA'),
@@ -266,20 +513,43 @@
     miniPhone: document.getElementById('miniPhone'),
     collapseBtn: document.getElementById('collapseBtn'),
     counter: document.getElementById('counter'),
+    invertBtn: document.getElementById('invertBtn'),
+    actionRow: document.getElementById('actionRow'),
     autoBtn: document.getElementById('autoBtn'),
     autoLabel: document.getElementById('autoLabel'),
+    likeBtn: document.getElementById('likeBtn'),
+    likeCount: document.getElementById('likeCount'),
+    heartPop: document.getElementById('heartPop'),
     playIcon: document.getElementById('playIcon'),
     playIconSvg: document.getElementById('playIconSvg'),
     soundHint: document.getElementById('soundHint'),
     trackFill: document.getElementById('trackFill'),
     loadWrap: document.getElementById('loadWrap'),
     loadText: document.getElementById('loadText'),
+    settingsBtn: document.getElementById('settingsBtn'),
+    settingsOverlay: document.getElementById('settingsOverlay'),
+    settingsCloseBtn: document.getElementById('settingsCloseBtn'),
+    favSwitch: document.getElementById('favSwitch'),
+    thresholdRow: document.getElementById('thresholdRow'),
+    backupBtn: document.getElementById('backupBtn'),
+    restoreBtn: document.getElementById('restoreBtn'),
+    restoreInput: document.getElementById('restoreInput'),
+    likedList: document.getElementById('likedList'),
+    likedEmpty: document.getElementById('likedEmpty'),
+    undoToast: document.getElementById('undoToast'),
+    undoBtn: document.getElementById('undoBtn'),
   };
 
   const ICON_PLAY = '<path d="M8 5v14l11-7z"/>';
   const ICON_PAUSE = '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
 
-  let videos = [];
+  const LIKES_KEY = 'vp_likes_v1';
+  const WATCHED_KEY = 'vp_watched_v1';
+  const FAV_MODE_KEY = 'vp_favmode_v1';
+  const FAV_THRESH_KEY = 'vp_favthresh_v1';
+
+  let allVideos = [];  // full raw list from manifest, never filtered
+  let videos = [];     // active shuffled pool (all or favorites)
   let photos = [];
   let vIndex = 0;
   let pIndex = 0;
@@ -291,11 +561,107 @@
   let swapLock = false;
   let soundOn = false;   // browsers require a tap before audio can play
   let curIsA = true;     // which slide layer is currently front-and-center
+  let likes = {};        // { filename: count }
+  let watched = {};       // { filename: true } — every video shown at least once
+  let favMode = false;
+  let favThreshold = 'top50';
+  let lastLikedFile = null;
+  let undoTimer = null;
+  let inverted = false;  // video-as-wallpaper mode
 
-  function curVid(){ return curIsA ? els.vidA : els.vidB; }
-  function curSlide(){ return curIsA ? els.slideA : els.slideB; }
-  function altVid(){ return curIsA ? els.vidB : els.vidA; }
-  function altSlide(){ return curIsA ? els.slideB : els.slideA; }
+  // ---------- Likes / watched storage ----------
+  function loadLikes(){
+    try{ likes = JSON.parse(localStorage.getItem(LIKES_KEY) || '{}'); }catch(e){ likes = {}; }
+  }
+  function saveLikes(){
+    try{ localStorage.setItem(LIKES_KEY, JSON.stringify(likes)); }catch(e){}
+  }
+  function loadWatched(){
+    try{ watched = JSON.parse(localStorage.getItem(WATCHED_KEY) || '{}'); }catch(e){ watched = {}; }
+  }
+  function saveWatched(){
+    try{ localStorage.setItem(WATCHED_KEY, JSON.stringify(watched)); }catch(e){}
+  }
+  function markWatched(file){
+    if(!file || watched[file]) return;
+    watched[file] = true;
+    saveWatched();
+  }
+  function loadFavPrefs(){
+    try{ favMode = localStorage.getItem(FAV_MODE_KEY) === '1'; }catch(e){ favMode = false; }
+    try{ favThreshold = localStorage.getItem(FAV_THRESH_KEY) || 'top50'; }catch(e){ favThreshold = 'top50'; }
+  }
+  function saveFavPrefs(){
+    try{ localStorage.setItem(FAV_MODE_KEY, favMode ? '1' : '0'); }catch(e){}
+    try{ localStorage.setItem(FAV_THRESH_KEY, favThreshold); }catch(e){}
+  }
+  if('storage' in navigator && navigator.storage.persist){
+    navigator.storage.persist().catch(()=>{});
+  }
+
+  function curVidFile(){ return videos.length ? videos[vIndex] : null; }
+
+  function refreshLikeBtn(){
+    const f = curVidFile();
+    const c = f ? (likes[f] || 0) : 0;
+    els.likeBtn.classList.toggle('liked', c > 0);
+    els.likeCount.textContent = c > 0 ? c : '';
+  }
+
+  function showUndoToast(file){
+    lastLikedFile = file;
+    els.undoToast.classList.add('show');
+    if(undoTimer) clearTimeout(undoTimer);
+    undoTimer = setTimeout(()=>{ els.undoToast.classList.remove('show'); }, 3000);
+  }
+
+  function likeFile(file){
+    if(!file) return;
+    likes[file] = (likes[file] || 0) + 1;
+    saveLikes();
+    refreshLikeBtn();
+    showUndoToast(file);
+  }
+
+  els.undoBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    if(!lastLikedFile) return;
+    if(likes[lastLikedFile] > 0){
+      likes[lastLikedFile]--;
+      if(likes[lastLikedFile] <= 0) delete likes[lastLikedFile];
+      saveLikes();
+      refreshLikeBtn();
+    }
+    els.undoToast.classList.remove('show');
+    if(undoTimer) clearTimeout(undoTimer);
+  });
+
+  els.likeBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    likeFile(curVidFile());
+  });
+
+  function showHeartPop(){
+    els.heartPop.classList.remove('show');
+    void els.heartPop.offsetWidth;
+    els.heartPop.classList.add('show');
+    setTimeout(()=> els.heartPop.classList.remove('show'), 550);
+  }
+
+  // ---------- Favorites pool ----------
+  function getFavoritesPool(){
+    if(favThreshold === 'all'){
+      return allVideos
+        .filter(f => (likes[f] || 0) > 0)
+        .sort((a,b) => (likes[b]||0) - (likes[a]||0));
+    }
+    const pool = allVideos.filter(f => watched[f]);
+    if(pool.length === 0) return [];
+    const sorted = pool.slice().sort((a,b) => (likes[b]||0) - (likes[a]||0));
+    const pct = favThreshold === 'top20' ? 0.2 : 0.5;
+    const n = Math.max(1, Math.ceil(sorted.length * pct));
+    return sorted.slice(0, n);
+  }
 
   function shuffle(arr){
     const a = arr.slice();
@@ -306,6 +672,24 @@
     return a;
   }
 
+  function activatePool(){
+    const pool = favMode ? getFavoritesPool() : allVideos;
+    if(pool.length === 0){
+      videos = [];
+      els.loadText.textContent = favMode
+        ? 'No favorites yet — watch and like a few videos first'
+        : 'No videos found — upload some to /videos';
+      els.loadWrap.style.display = 'flex';
+      return false;
+    }
+    els.loadWrap.style.display = 'none';
+    videos = shuffle(pool);
+    delete els.vidA.dataset.url;
+    delete els.vidB.dataset.url;
+    return true;
+  }
+
+  // ---------- Photo background ----------
   function setBg(url){
     const showEl = activeBg === 1 ? els.bg2 : els.bg1;
     const hideEl = activeBg === 1 ? els.bg1 : els.bg2;
@@ -315,21 +699,17 @@
     hideEl.classList.remove('active');
     activeBg = activeBg === 1 ? 2 : 1;
   }
-
-  // Preload the upcoming photo so the crossfade never starts before it's ready
   function preloadPhotoAt(i){
     if(photos.length === 0) return;
     const img = new Image();
     img.src = 'photos/' + photos[((i % photos.length) + photos.length) % photos.length];
   }
-
   function nextPhoto(){
     if(photos.length === 0) return;
     pIndex = (pIndex + 1) % photos.length;
     setBg('photos/' + photos[pIndex]);
     preloadPhotoAt(pIndex + 1);
   }
-
   function startPhotoCycle(){
     if(photoTimer) clearInterval(photoTimer);
     if(photos.length === 0) return;
@@ -338,8 +718,45 @@
     photoTimer = setInterval(nextPhoto, 10000);
   }
 
-  // Warm the browser cache for the next clip so it starts instantly when swiped to.
-  // (The alt layer's video element doubles as the preloader.)
+  // ---------- Ambient glow: sample the playing video's average color ----------
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 16; glowCanvas.height = 16;
+  const glowCtx = glowCanvas.getContext('2d', {willReadFrequently:true});
+  function sampleGlow(){
+    const v = curVid();
+    if(!v || v.readyState < 2 || !v.videoWidth) return;
+    try{
+      glowCtx.drawImage(v, 0, 0, 16, 16);
+      const data = glowCtx.getImageData(0, 0, 16, 16).data;
+      let r=0,g=0,b=0,n=0;
+      for(let i=0;i<data.length;i+=4){ r+=data[i]; g+=data[i+1]; b+=data[i+2]; n++; }
+      r = Math.round(r/n); g = Math.round(g/n); b = Math.round(b/n);
+      els.glow.style.backgroundColor = `rgb(${r},${g},${b})`;
+    }catch(e){ /* ignore transient decode errors */ }
+  }
+  setInterval(sampleGlow, 900);
+
+  // ---------- Skeleton shimmer while buffering ----------
+  function bindShimmer(video){
+    const shimmerEl = video.parentElement.querySelector('.shimmer');
+    video.addEventListener('waiting', ()=> shimmerEl.classList.add('show'));
+    video.addEventListener('stalled', ()=> shimmerEl.classList.add('show'));
+    video.addEventListener('playing', ()=> shimmerEl.classList.remove('show'));
+    video.addEventListener('canplay', ()=> shimmerEl.classList.remove('show'));
+  }
+  bindShimmer(els.vidA);
+  bindShimmer(els.vidB);
+  function showShimmerFor(video){
+    const shimmerEl = video.parentElement.querySelector('.shimmer');
+    if(shimmerEl) shimmerEl.classList.add('show');
+  }
+
+  // ---------- Video playback ----------
+  function curVid(){ return curIsA ? els.vidA : els.vidB; }
+  function curSlide(){ return curIsA ? els.slideA : els.slideB; }
+  function altVid(){ return curIsA ? els.vidB : els.vidA; }
+  function altSlide(){ return curIsA ? els.slideB : els.slideA; }
+
   function preloadNext(){
     if(videos.length < 2) return;
     const nextIdx = (vIndex + 1) % videos.length;
@@ -353,7 +770,6 @@
   }
 
   function resolveIndex(index){
-    // On forward wrap-around, reshuffle so a new cycle has a fresh order
     if(videos.length > 1 && index >= videos.length){
       const lastClip = videos[vIndex];
       let reshuffled = shuffle(videos);
@@ -371,24 +787,24 @@
 
   function updateCounter(){
     els.counter.textContent = (vIndex+1) + ' / ' + videos.length;
+    refreshLikeBtn();
   }
 
-  // Initial load: no animation, just play in the current layer (muted for autoplay policy)
   function loadFirst(){
     vIndex = 0;
     const v = curVid();
     const url = 'videos/' + videos[vIndex];
+    showShimmerFor(v);
     v.src = url;
     v.dataset.url = url;
     v.loop = !autoplay;
     v.muted = true;
     v.play().catch(()=>{});
+    markWatched(videos[vIndex]);
     updateCounter();
     preloadNext();
   }
 
-  // TikTok-style: incoming clip physically slides in while the old one slides out.
-  // Both layers are visible during the transition.
   function slideTo(index, dir){
     if(swapLock) return;
     if(videos.length < 2) return;
@@ -402,15 +818,14 @@
     const outV = curVid();
     const inV = altVid();
 
-    // Park incoming layer just offscreen on the approach side, no animation
     inSlide.classList.add('noTrans');
     inSlide.classList.remove('offAbove','offBelow');
     inSlide.classList.add(dir > 0 ? 'offBelow' : 'offAbove');
     void inSlide.offsetWidth;
     inSlide.classList.remove('noTrans');
 
-    // Start the incoming video playing (it may already be preloaded in this element)
     if(inV.dataset.url !== url){
+      showShimmerFor(inV);
       inV.src = url;
       inV.dataset.url = url;
     }
@@ -418,8 +833,8 @@
     inV.loop = !autoplay;
     inV.muted = !soundOn;
     inV.play().catch(()=>{});
+    markWatched(videos[vIndex]);
 
-    // Animate: old slides away, new slides to center — both visible
     outSlide.classList.remove('offAbove','offBelow');
     outSlide.classList.add(dir > 0 ? 'offAbove' : 'offBelow');
     inSlide.classList.remove('offAbove','offBelow');
@@ -452,7 +867,6 @@
   els.vidA.addEventListener('timeupdate', onTime);
   els.vidB.addEventListener('timeupdate', onTime);
 
-  // First user tap anywhere enables sound (autoplay policy requires a gesture)
   function enableSound(){
     if(soundOn) return;
     soundOn = true;
@@ -469,15 +883,15 @@
     setTimeout(()=> els.playIcon.classList.remove('show'), 450);
   }
 
-  function positionAutoBtn(){
+  function positionActionRow(){
     const frameRect = els.miniPhone.getBoundingClientRect();
     const phoneRect = phoneEl.getBoundingClientRect();
     const bottomRelative = frameRect.bottom - phoneRect.top;
-    els.autoBtn.style.top = (bottomRelative + 16) + 'px';
-    els.autoBtn.classList.add('ready');
+    els.actionRow.style.top = (bottomRelative + 16) + 'px';
+    els.actionRow.classList.add('ready');
   }
-  window.addEventListener('resize', positionAutoBtn);
-  window.addEventListener('orientationchange', () => setTimeout(positionAutoBtn, 200));
+  window.addEventListener('resize', positionActionRow);
+  window.addEventListener('orientationchange', () => setTimeout(positionActionRow, 200));
 
   function setView(next){
     view = next;
@@ -493,30 +907,65 @@
     }
   }
 
-  // Tap on the mini phone / video area
-  els.miniPhone.addEventListener('click', function(e){
+  // ---------- Video-as-wallpaper inversion ----------
+  function setInverted(v){
+    inverted = v;
+    phoneEl.classList.toggle('inverted', inverted);
+    els.invertBtn.classList.toggle('on', inverted);
+    setView('dual'); // avoid combined-state edge cases with videoFull/photoFull
+  }
+  els.invertBtn.addEventListener('click', function(e){
     e.stopPropagation();
-    if(view === 'dual'){
-      setView('videoFull');
-    } else if(view === 'videoFull'){
-      const v = curVid();
-      if(v.paused){ v.play(); flashPlayIcon(true); }
-      else { v.pause(); flashPlayIcon(false); }
+    setInverted(!inverted);
+  });
+  // Tapping the small photo frame while inverted swaps back to normal.
+  // While NOT inverted, let the click bubble up to phoneEl's photoFull logic (unchanged).
+  els.photoStage.addEventListener('click', function(e){
+    if(inverted){
+      e.stopPropagation();
+      setInverted(false);
     }
   });
 
-  // Collapse button (only visible in videoFull)
+  // Single-tap vs double-tap detection on the mini phone / video area
+  let tapCount = 0;
+  let tapTimer = null;
+  els.miniPhone.addEventListener('click', function(e){
+    e.stopPropagation();
+    tapCount++;
+    if(tapCount === 1){
+      tapTimer = setTimeout(function(){
+        tapCount = 0;
+        if(inverted){
+          const v = curVid();
+          if(v.paused){ v.play(); flashPlayIcon(true); }
+          else { v.pause(); flashPlayIcon(false); }
+        } else if(view === 'dual'){
+          setView('videoFull');
+        } else if(view === 'videoFull'){
+          const v = curVid();
+          if(v.paused){ v.play(); flashPlayIcon(true); }
+          else { v.pause(); flashPlayIcon(false); }
+        }
+      }, 260);
+    } else if(tapCount >= 2){
+      clearTimeout(tapTimer);
+      tapCount = 0;
+      likeFile(curVidFile());
+      showHeartPop();
+    }
+  });
+
   els.collapseBtn.addEventListener('click', function(e){
     e.stopPropagation();
     setView('dual');
   });
 
-  // Tap anywhere else on the phone stage = photo interactions
   phoneEl.addEventListener('click', function(e){
+    if(inverted) return;
     if(view === 'photoFull'){
       setView('dual');
     } else if(view === 'dual'){
-      // click landed on background, not on miniPhone (miniPhone stops propagation)
       setView('photoFull');
     }
   });
@@ -529,13 +978,12 @@
     curVid().loop = !autoplay;
   });
 
-  // Swipe handling (vertical) - works in dual and videoFull
   let touchStartY = null;
   phoneEl.addEventListener('touchstart', function(e){
     touchStartY = e.touches[0].clientY;
   }, {passive:true});
   phoneEl.addEventListener('touchend', function(e){
-    if(touchStartY === null || view === 'photoFull') return;
+    if(touchStartY === null || (view === 'photoFull' && !inverted)) return;
     const dy = e.changedTouches[0].clientY - touchStartY;
     if(Math.abs(dy) > 60){
       if(dy < 0) goNext(); else goPrev();
@@ -544,40 +992,156 @@
   }, {passive:true});
 
   window.addEventListener('keydown', function(e){
-    if(view === 'photoFull') return;
+    if(view === 'photoFull' && !inverted) return;
     if(e.key === 'ArrowDown' || e.key === 'ArrowRight') goNext();
     if(e.key === 'ArrowUp' || e.key === 'ArrowLeft') goPrev();
     if(e.key === ' '){ e.preventDefault(); els.miniPhone.click(); }
     if(e.key === 'Escape') setView('dual');
+    if(e.key === 'l' || e.key === 'L'){ likeFile(curVidFile()); showHeartPop(); }
+    if(e.key === 'i' || e.key === 'I'){ setInverted(!inverted); }
   });
 
   let wheelLock = false;
   window.addEventListener('wheel', function(e){
-    if(wheelLock || view === 'photoFull') return;
+    if(wheelLock || (view === 'photoFull' && !inverted)) return;
     if(Math.abs(e.deltaY) < 30) return;
     wheelLock = true;
     if(e.deltaY > 0) goNext(); else goPrev();
     setTimeout(()=> wheelLock = false, 500);
   }, {passive:true});
 
+  // ---------- Settings panel ----------
+  function renderLikedList(){
+    const entries = Object.keys(likes)
+      .map(f => ({ f, c: likes[f] }))
+      .filter(x => x.c > 0)
+      .sort((a,b) => b.c - a.c);
+    els.likedList.innerHTML = '';
+    els.likedEmpty.style.display = entries.length ? 'none' : 'block';
+    entries.forEach(entry => {
+      const row = document.createElement('div');
+      row.className = 'likedRow';
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'fn';
+      nameSpan.textContent = entry.f + '  ·  ' + entry.c;
+      const btn = document.createElement('button');
+      btn.className = 'minus';
+      btn.textContent = '−';
+      btn.addEventListener('click', function(){
+        likes[entry.f]--;
+        if(likes[entry.f] <= 0) delete likes[entry.f];
+        saveLikes();
+        refreshLikeBtn();
+        renderLikedList();
+      });
+      row.appendChild(nameSpan);
+      row.appendChild(btn);
+      els.likedList.appendChild(row);
+    });
+  }
+
+  function openSettings(){
+    els.favSwitch.classList.toggle('on', favMode);
+    const radios = els.thresholdRow.querySelectorAll('input[name="favThresh"]');
+    radios.forEach(r => {
+      r.checked = (r.value === favThreshold);
+      r.closest('.radioOpt').classList.toggle('active', r.checked);
+    });
+    renderLikedList();
+    els.settingsOverlay.classList.add('show');
+  }
+  function closeSettings(){
+    els.settingsOverlay.classList.remove('show');
+  }
+  els.settingsBtn.addEventListener('click', function(e){ e.stopPropagation(); openSettings(); });
+  els.settingsCloseBtn.addEventListener('click', function(e){ e.stopPropagation(); closeSettings(); });
+  els.settingsOverlay.addEventListener('click', function(e){
+    if(e.target === els.settingsOverlay) closeSettings();
+  });
+
+  els.favSwitch.addEventListener('click', function(e){
+    e.stopPropagation();
+    favMode = !favMode;
+    els.favSwitch.classList.toggle('on', favMode);
+    saveFavPrefs();
+    if(activatePool()) loadFirst();
+  });
+
+  els.thresholdRow.querySelectorAll('input[name="favThresh"]').forEach(r => {
+    r.addEventListener('change', function(){
+      favThreshold = r.value;
+      els.thresholdRow.querySelectorAll('.radioOpt').forEach(opt => opt.classList.remove('active'));
+      r.closest('.radioOpt').classList.add('active');
+      saveFavPrefs();
+      if(favMode){ if(activatePool()) loadFirst(); }
+    });
+  });
+
+  els.backupBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    const data = JSON.stringify(likes, null, 2);
+    const blob = new Blob([data], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const d = new Date();
+    const stamp = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    a.href = url;
+    a.download = 'likes-backup-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 2000);
+  });
+
+  els.restoreBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    els.restoreInput.click();
+  });
+  els.restoreInput.addEventListener('change', function(){
+    const file = els.restoreInput.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = function(){
+      try{
+        const incoming = JSON.parse(reader.result);
+        Object.keys(incoming).forEach(f => {
+          const n = Number(incoming[f]) || 0;
+          likes[f] = (likes[f] || 0) + n;
+        });
+        saveLikes();
+        refreshLikeBtn();
+        renderLikedList();
+      }catch(err){
+        console.error('Restore failed', err);
+      }
+      els.restoreInput.value = '';
+    };
+    reader.readAsText(file);
+  });
+
+  // ---------- Boot ----------
+  loadLikes();
+  loadWatched();
+  loadFavPrefs();
+
   fetch('manifest.json?t=' + Date.now())
     .then(r => r.json())
     .then(data => {
-      videos = shuffle(data.videos || []);
+      allVideos = data.videos || [];
       photos = shuffle(data.photos || []);
-      if(videos.length === 0){
+      if(allVideos.length === 0){
         els.loadText.textContent = 'No videos found — upload some to /videos';
         return;
       }
       if(photos.length === 0){
         els.loadText.textContent = 'No photos found — upload some to /photos';
-        // still show video even without photos
       }
-      els.loadWrap.style.display = 'none';
-      els.autoBtn.classList.add('on');
-      loadFirst();
-      startPhotoCycle();
-      positionAutoBtn();
+      if(activatePool()){
+        els.autoBtn.classList.add('on');
+        loadFirst();
+        startPhotoCycle();
+        positionActionRow();
+      }
     })
     .catch(err => {
       els.loadText.textContent = 'Could not load manifest.json';
