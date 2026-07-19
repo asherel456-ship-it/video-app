@@ -84,8 +84,16 @@
     width:34%; height:16px; background:rgba(4,4,6,0.95);
     border-radius:10px; z-index:2;
   }
+  #vidWrap{
+    position:absolute; inset:0;
+    transition:transform 0.24s ease, opacity 0.24s ease;
+  }
+  #vidWrap.noTrans{ transition:none !important; }
+  #vidWrap.swapOutUp{ transform:translateY(-16%); opacity:0; }
+  #vidWrap.swapOutDown{ transform:translateY(16%); opacity:0; }
   #miniPhone video{
     width:100%; height:100%; object-fit:cover; display:block;
+    background:#000 center/cover no-repeat;
   }
 
   #phone.videoFull #miniPhone{
@@ -197,7 +205,9 @@
 
     <div id="miniPhone">
       <div class="notch"></div>
-      <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+      <div id="vidWrap">
+        <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+      </div>
       <video id="preloadVid" preload="auto" muted playsinline webkit-playsinline style="display:none"></video>
       <video id="preloadPrevVid" preload="auto" muted playsinline webkit-playsinline style="display:none"></video>
       <div id="playIcon">
@@ -232,6 +242,7 @@
     bg1: document.getElementById('bg1'),
     bg2: document.getElementById('bg2'),
     vid: document.getElementById('vid'),
+    vidWrap: document.getElementById('vidWrap'),
     preloadVid: document.getElementById('preloadVid'),
     preloadPrevVid: document.getElementById('preloadPrevVid'),
     miniPhone: document.getElementById('miniPhone'),
@@ -258,6 +269,7 @@
   let photoTimer = null;
   let view = 'dual'; // 'dual' | 'videoFull' | 'photoFull'
   let wasPlayingBeforePhotoFull = true;
+  let swapLock = false;
 
   function shuffle(arr){
     const a = arr.slice();
@@ -278,16 +290,25 @@
     activeBg = activeBg === 1 ? 2 : 1;
   }
 
+  // #1: Preload the upcoming photo so the crossfade never starts before it's ready
+  function preloadPhotoAt(i){
+    if(photos.length === 0) return;
+    const img = new Image();
+    img.src = 'photos/' + photos[((i % photos.length) + photos.length) % photos.length];
+  }
+
   function nextPhoto(){
     if(photos.length === 0) return;
     pIndex = (pIndex + 1) % photos.length;
     setBg('photos/' + photos[pIndex]);
+    preloadPhotoAt(pIndex + 1);
   }
 
   function startPhotoCycle(){
     if(photoTimer) clearInterval(photoTimer);
     if(photos.length === 0) return;
     setBg('photos/' + photos[pIndex]);
+    preloadPhotoAt(pIndex + 1);
     photoTimer = setInterval(nextPhoto, 10000);
   }
 
@@ -310,9 +331,46 @@
     }
   }
 
+  // #2: Capture a poster frame from an already-preloaded video element
+  function capturePosterFrom(el){
+    try{
+      if(el && el.readyState >= 2 && el.videoWidth > 0){
+        const c = document.createElement('canvas');
+        c.width = el.videoWidth;
+        c.height = el.videoHeight;
+        c.getContext('2d').drawImage(el, 0, 0);
+        return c.toDataURL('image/jpeg', 0.6);
+      }
+    }catch(e){ /* canvas capture can fail silently; poster is best-effort */ }
+    return null;
+  }
+
   function loadVideo(index){
+    // #3: On forward wrap-around, reshuffle so a new cycle has a fresh order
+    if(videos.length > 1 && index >= videos.length){
+      const lastClip = videos[vIndex];
+      let reshuffled = shuffle(videos);
+      // avoid immediately repeating the clip we just watched
+      let guard = 0;
+      while(reshuffled[0] === lastClip && guard < 10){
+        reshuffled = shuffle(videos);
+        guard++;
+      }
+      videos = reshuffled;
+      // preload elements may now point at stale neighbors; clear their markers
+      delete els.preloadVid.dataset.url;
+      delete els.preloadPrevVid.dataset.url;
+    }
     vIndex = ((index % videos.length) + videos.length) % videos.length;
-    els.vid.src = 'videos/' + videos[vIndex];
+    const url = 'videos/' + videos[vIndex];
+
+    // #2: If this exact video was preloaded, show its first frame instantly as poster
+    let poster = null;
+    if(els.preloadVid.dataset.url === url) poster = capturePosterFrom(els.preloadVid);
+    else if(els.preloadPrevVid.dataset.url === url) poster = capturePosterFrom(els.preloadPrevVid);
+    if(poster){ els.vid.poster = poster; } else { els.vid.removeAttribute('poster'); }
+
+    els.vid.src = url;
     els.vid.currentTime = 0;
     els.vid.loop = !autoplay;
     els.vid.play().catch(()=>{});
@@ -320,8 +378,28 @@
     preloadNeighbors();
   }
 
-  function goNext(){ loadVideo(vIndex+1); }
-  function goPrev(){ loadVideo(vIndex-1); }
+  // #5: Slide transition between clips (TikTok-style)
+  function animatedLoad(index, dir){
+    if(swapLock){ return; }
+    if(videos.length < 2){ loadVideo(index); return; }
+    swapLock = true;
+    const w = els.vidWrap;
+    w.classList.add(dir > 0 ? 'swapOutUp' : 'swapOutDown');
+    setTimeout(function(){
+      loadVideo(index);
+      // jump instantly to the opposite edge, then slide into place
+      w.classList.add('noTrans');
+      w.classList.remove('swapOutUp','swapOutDown');
+      w.classList.add(dir > 0 ? 'swapOutDown' : 'swapOutUp');
+      void w.offsetWidth;
+      w.classList.remove('noTrans');
+      w.classList.remove('swapOutUp','swapOutDown');
+      setTimeout(function(){ swapLock = false; }, 240);
+    }, 220);
+  }
+
+  function goNext(){ animatedLoad(vIndex+1, 1); }
+  function goPrev(){ animatedLoad(vIndex-1, -1); }
 
   els.vid.addEventListener('ended', function(){
     if(autoplay){ goNext(); }
