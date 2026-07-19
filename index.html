@@ -605,6 +605,19 @@
   const WATCHED_KEY = 'vp_watched_v1';
   const FAV_MODE_KEY = 'vp_favmode_v1';
   const FAV_THRESH_KEY = 'vp_favthresh_v1';
+  const QUEUE_KEY = 'vp_queue_v1';
+
+  function computeQueueKey(){
+    return (favMode ? ('fav:' + favThreshold) : 'all') + '|' + videos.slice().sort().join(',');
+  }
+  function saveQueueState(){
+    try{
+      localStorage.setItem(QUEUE_KEY, JSON.stringify({ key: computeQueueKey(), order: videos, pos: queuePos }));
+    }catch(e){}
+  }
+  function loadQueueState(){
+    try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || 'null'); }catch(e){ return null; }
+  }
 
   let allVideos = [];  // full raw list from manifest, never filtered
   let videos = [];     // active shuffled pool (all or favorites)
@@ -683,6 +696,7 @@
     }
     const f = videos[queuePos];
     queuePos++;
+    saveQueueState();
     return f;
   }
 
@@ -775,7 +789,17 @@
       return false;
     }
     els.loadWrap.style.display = 'none';
-    videos = shuffle(pool);
+
+    const wantedKey = (favMode ? ('fav:' + favThreshold) : 'all') + '|' + pool.slice().sort().join(',');
+    const saved = loadQueueState();
+    if(saved && saved.key === wantedKey && Array.isArray(saved.order) && saved.order.length === pool.length){
+      videos = saved.order;
+      queuePos = (typeof saved.pos === 'number' && saved.pos <= videos.length) ? saved.pos : 0;
+    } else {
+      videos = shuffle(pool);
+      queuePos = 0;
+      saveQueueState();
+    }
     delete els.vidA.dataset.url;
     delete els.vidB.dataset.url;
     return true;
@@ -929,7 +953,6 @@
   function startPlayback(){
     history = [];
     histPos = -1;
-    queuePos = 0;
     const f = nextFrontierFile();
     if(!f) return;
     history.push(f);
