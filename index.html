@@ -39,6 +39,55 @@
     #phone{ border-radius:36px; border:1px solid rgba(255,255,255,0.08); }
   }
 
+  /* ===== Password lock screen ===== */
+  #lockWrap{
+    position:absolute; inset:0; z-index:40;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:22px;
+    background:var(--bg);
+  }
+  #lockIcon{ font-size:34px; }
+  #lockTitle{ font-size:15px; color:var(--dim); letter-spacing:0.02em; }
+  #lockForm{
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+    width:78%; max-width:280px;
+  }
+  #pwInput{
+    width:100%;
+    padding:13px 16px;
+    border-radius:14px;
+    border:1px solid rgba(255,255,255,0.15);
+    background:rgba(255,255,255,0.06);
+    color:var(--ink);
+    font-size:16px;
+    text-align:center;
+    outline:none;
+    letter-spacing:0.08em;
+    transition:border-color 0.2s ease, transform 0.1s ease;
+  }
+  #pwInput:focus{ border-color:var(--accent); }
+  #pwSubmit{
+    width:100%;
+    padding:13px 16px;
+    border-radius:14px;
+    border:none;
+    background:var(--accent);
+    color:#1a1206;
+    font-size:15px; font-weight:700; letter-spacing:0.03em;
+    cursor:pointer;
+  }
+  #lockForm.wrong #pwInput{
+    border-color:#ff5a5a;
+    animation:shake 0.35s ease;
+  }
+  @keyframes shake{
+    0%,100%{ transform:translateX(0); }
+    20%{ transform:translateX(-8px); }
+    40%{ transform:translateX(8px); }
+    60%{ transform:translateX(-5px); }
+    80%{ transform:translateX(5px); }
+  }
+
   /* ===== Photo stage: fullscreen by default, shrinks to mini-frame when inverted ===== */
   #photoStage{
     position:absolute;
@@ -495,6 +544,15 @@
       <div class="spinner"></div>
       <div id="loadText">Loading manifest…</div>
     </div>
+
+    <div id="lockWrap">
+      <div id="lockIcon">&#128274;</div>
+      <div id="lockTitle">Enter password</div>
+      <form id="lockForm" autocomplete="off">
+        <input id="pwInput" type="password" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Password">
+        <button id="pwSubmit" type="submit">Unlock</button>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -551,7 +609,6 @@
   let allVideos = [];  // full raw list from manifest, never filtered
   let videos = [];     // active shuffled pool (all or favorites)
   let photos = [];
-  let vIndex = 0;
   let pIndex = 0;
   let activeBg = 1;
   let autoplay = true;
@@ -599,7 +656,42 @@
     navigator.storage.persist().catch(()=>{});
   }
 
-  function curVidFile(){ return videos.length ? videos[vIndex] : null; }
+  // Real playback history (TikTok-style): `history` is every file actually shown,
+  // in the order shown. `histPos` is where we currently are within it. `videos` is
+  // the shuffled frontier queue used only to mint brand-new "next" content once
+  // we've caught back up to the leading edge of history. This guarantees swiping
+  // back always retraces exactly what was just playing — never a fresh random pick.
+  let history = [];
+  let histPos = -1;
+  let queuePos = 0;
+
+  function currentFile(){ return (histPos >= 0 && histPos < history.length) ? history[histPos] : null; }
+  function curVidFile(){ return currentFile(); }
+
+  function nextFrontierFile(){
+    if(videos.length === 0) return null;
+    if(queuePos >= videos.length){
+      const lastFile = history[history.length - 1];
+      let reshuffled = shuffle(videos);
+      let guard = 0;
+      while(reshuffled[0] === lastFile && guard < 10){
+        reshuffled = shuffle(videos);
+        guard++;
+      }
+      videos = reshuffled;
+      queuePos = 0;
+    }
+    const f = videos[queuePos];
+    queuePos++;
+    return f;
+  }
+
+  function peekNextFile(){
+    if(histPos < history.length - 1) return history[histPos + 1];
+    if(videos.length === 0) return null;
+    const idx = queuePos >= videos.length ? 0 : queuePos;
+    return videos[idx];
+  }
 
   function refreshLikeBtn(){
     const f = curVidFile();
@@ -757,61 +849,45 @@
   function altVid(){ return curIsA ? els.vidB : els.vidA; }
   function altSlide(){ return curIsA ? els.slideB : els.slideA; }
 
-  function preloadNext(){
-    if(videos.length < 2) return;
-    const nextIdx = (vIndex + 1) % videos.length;
-    const nextUrl = 'videos/' + videos[nextIdx];
+  function preloadUpcoming(){
+    const nextFile = peekNextFile();
+    if(!nextFile) return;
+    const url = 'videos/' + nextFile;
     const a = altVid();
-    if(a.dataset.url !== nextUrl){
-      a.src = nextUrl;
-      a.dataset.url = nextUrl;
+    if(a.dataset.url !== url){
+      a.src = url;
+      a.dataset.url = url;
       a.load();
     }
   }
 
-  function resolveIndex(index){
-    if(videos.length > 1 && index >= videos.length){
-      const lastClip = videos[vIndex];
-      let reshuffled = shuffle(videos);
-      let guard = 0;
-      while(reshuffled[0] === lastClip && guard < 10){
-        reshuffled = shuffle(videos);
-        guard++;
-      }
-      videos = reshuffled;
-      delete els.vidA.dataset.url;
-      delete els.vidB.dataset.url;
-    }
-    return ((index % videos.length) + videos.length) % videos.length;
-  }
-
-  function updateCounter(){
-    els.counter.textContent = (vIndex+1) + ' / ' + videos.length;
+  function updateCounterFor(file){
+    const idx = videos.indexOf(file);
+    els.counter.textContent = (idx >= 0 ? idx + 1 : '?') + ' / ' + videos.length;
     refreshLikeBtn();
   }
 
-  function loadFirst(){
-    vIndex = 0;
-    const v = curVid();
-    const url = 'videos/' + videos[vIndex];
-    showShimmerFor(v);
-    v.src = url;
-    v.dataset.url = url;
-    v.loop = !autoplay;
-    v.muted = true;
-    v.play().catch(()=>{});
-    markWatched(videos[vIndex]);
-    updateCounter();
-    preloadNext();
-  }
+  // dir: 0 = initial load (no animation), 1 = forward slide, -1 = backward slide
+  function showFile(file, dir){
+    if(!file) return;
+    const url = 'videos/' + file;
 
-  function slideTo(index, dir){
+    if(dir === 0){
+      const v = curVid();
+      showShimmerFor(v);
+      v.src = url;
+      v.dataset.url = url;
+      v.loop = !autoplay;
+      v.muted = true;
+      v.play().catch(()=>{});
+      markWatched(file);
+      updateCounterFor(file);
+      preloadUpcoming();
+      return;
+    }
+
     if(swapLock) return;
-    if(videos.length < 2) return;
     swapLock = true;
-
-    vIndex = resolveIndex(index);
-    const url = 'videos/' + videos[vIndex];
 
     const outSlide = curSlide();
     const inSlide = altSlide();
@@ -833,25 +909,59 @@
     inV.loop = !autoplay;
     inV.muted = !soundOn;
     inV.play().catch(()=>{});
-    markWatched(videos[vIndex]);
+    markWatched(file);
 
     outSlide.classList.remove('offAbove','offBelow');
     outSlide.classList.add(dir > 0 ? 'offAbove' : 'offBelow');
     inSlide.classList.remove('offAbove','offBelow');
 
-    updateCounter();
+    updateCounterFor(file);
 
     setTimeout(function(){
       outV.pause();
       outV.muted = true;
       curIsA = !curIsA;
-      preloadNext();
+      preloadUpcoming();
       swapLock = false;
     }, 340);
   }
 
-  function goNext(){ slideTo(vIndex+1, 1); }
-  function goPrev(){ slideTo(vIndex-1, -1); }
+  function startPlayback(){
+    history = [];
+    histPos = -1;
+    queuePos = 0;
+    const f = nextFrontierFile();
+    if(!f) return;
+    history.push(f);
+    histPos = 0;
+    showFile(f, 0);
+  }
+
+  function goNext(){
+    if(swapLock) return;
+    if(histPos < history.length - 1){
+      // Retracing forward through history we'd already gone back through —
+      // shows the exact same clip, never something new.
+      histPos++;
+      showFile(history[histPos], 1);
+    } else {
+      // At the leading edge: mint one new clip from the frontier queue.
+      const f = nextFrontierFile();
+      if(!f) return;
+      history.push(f);
+      histPos = history.length - 1;
+      showFile(f, 1);
+    }
+  }
+
+  function goPrev(){
+    if(swapLock) return;
+    if(histPos > 0){
+      histPos--;
+      showFile(history[histPos], -1);
+    }
+    // else: already at the first video ever shown this session — nothing before it.
+  }
 
   function onEnded(e){
     if(e.target === curVid() && autoplay){ goNext(); }
@@ -992,6 +1102,7 @@
   }, {passive:true});
 
   window.addEventListener('keydown', function(e){
+    if(document.activeElement && document.activeElement.id === 'pwInput') return;
     if(view === 'photoFull' && !inverted) return;
     if(e.key === 'ArrowDown' || e.key === 'ArrowRight') goNext();
     if(e.key === 'ArrowUp' || e.key === 'ArrowLeft') goPrev();
@@ -1064,7 +1175,7 @@
     favMode = !favMode;
     els.favSwitch.classList.toggle('on', favMode);
     saveFavPrefs();
-    if(activatePool()) loadFirst();
+    if(activatePool()) startPlayback();
   });
 
   els.thresholdRow.querySelectorAll('input[name="favThresh"]').forEach(r => {
@@ -1073,7 +1184,7 @@
       els.thresholdRow.querySelectorAll('.radioOpt').forEach(opt => opt.classList.remove('active'));
       r.closest('.radioOpt').classList.add('active');
       saveFavPrefs();
-      if(favMode){ if(activatePool()) loadFirst(); }
+      if(favMode){ if(activatePool()) startPlayback(); }
     });
   });
 
@@ -1124,29 +1235,75 @@
   loadWatched();
   loadFavPrefs();
 
-  fetch('manifest.json?t=' + Date.now())
-    .then(r => r.json())
-    .then(data => {
-      allVideos = data.videos || [];
-      photos = shuffle(data.photos || []);
-      if(allVideos.length === 0){
-        els.loadText.textContent = 'No videos found — upload some to /videos';
-        return;
-      }
-      if(photos.length === 0){
-        els.loadText.textContent = 'No photos found — upload some to /photos';
-      }
-      if(activatePool()){
-        els.autoBtn.classList.add('on');
-        loadFirst();
-        startPhotoCycle();
-        positionActionRow();
-      }
-    })
-    .catch(err => {
-      els.loadText.textContent = 'Could not load manifest.json';
-      console.error(err);
-    });
+  const PW_HASH = 'd0bba2c517fe4ce26043e22dbde194a8de40a2fb6312c6726b85f578452e078a';
+  const lockWrap = document.getElementById('lockWrap');
+  const lockForm = document.getElementById('lockForm');
+  const pwInput = document.getElementById('pwInput');
+
+  async function sha256Hex(text){
+    const data = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+
+  function bootApp(){
+    fetch('manifest.json?t=' + Date.now())
+      .then(r => r.json())
+      .then(data => {
+        allVideos = data.videos || [];
+        photos = shuffle(data.photos || []);
+        if(allVideos.length === 0){
+          els.loadText.textContent = 'No videos found — upload some to /videos';
+          return;
+        }
+        if(photos.length === 0){
+          els.loadText.textContent = 'No photos found — upload some to /photos';
+        }
+        if(activatePool()){
+          els.autoBtn.classList.add('on');
+          startPlayback();
+          startPhotoCycle();
+          positionActionRow();
+        }
+      })
+      .catch(err => {
+        els.loadText.textContent = 'Could not load manifest.json';
+        console.error(err);
+      });
+  }
+
+  function unlock(){
+    try{ sessionStorage.setItem('vp_unlocked','1'); }catch(e){}
+    lockWrap.style.display = 'none';
+    bootApp();
+  }
+
+  lockForm.addEventListener('submit', async function(e){
+    e.preventDefault();
+    lockForm.classList.remove('wrong');
+    const typed = pwInput.value;
+    if(!typed) return;
+    let hash = '';
+    try{ hash = await sha256Hex(typed); }catch(err){}
+    if(hash === PW_HASH){
+      unlock();
+    } else {
+      pwInput.value = '';
+      void lockForm.offsetWidth;
+      lockForm.classList.add('wrong');
+    }
+  });
+
+  let sessionOk = false;
+  try{ sessionOk = sessionStorage.getItem('vp_unlocked') === '1'; }catch(e){}
+
+  if(sessionOk){
+    lockWrap.style.display = 'none';
+    bootApp();
+  } else {
+    els.loadWrap.style.display = 'none';
+    setTimeout(()=> pwInput.focus(), 300);
+  }
 
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js').catch(()=>{});
