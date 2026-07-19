@@ -84,16 +84,20 @@
     width:34%; height:16px; background:rgba(4,4,6,0.95);
     border-radius:10px; z-index:2;
   }
-  #vidWrap{
+
+  /* Two stacked sliding layers; during a swipe both are visible,
+     one sliding out while the other slides in (TikTok-style) */
+  .vidSlide{
     position:absolute; inset:0;
-    transition:transform 0.24s ease, opacity 0.24s ease;
+    transform:translateY(0);
+    transition:transform 0.32s cubic-bezier(.22,.9,.3,1);
+    background:#000;
   }
-  #vidWrap.noTrans{ transition:none !important; }
-  #vidWrap.swapOutUp{ transform:translateY(-16%); opacity:0; }
-  #vidWrap.swapOutDown{ transform:translateY(16%); opacity:0; }
-  #miniPhone video{
+  .vidSlide.noTrans{ transition:none !important; }
+  .vidSlide.offBelow{ transform:translateY(100%); }
+  .vidSlide.offAbove{ transform:translateY(-100%); }
+  .vidSlide video{
     width:100%; height:100%; object-fit:cover; display:block;
-    background:#000 center/cover no-repeat;
   }
 
   #phone.videoFull #miniPhone{
@@ -103,7 +107,7 @@
     border-radius:0; border:none; box-shadow:none;
     transform:translate(-50%,-50%);
   }
-  #phone.videoFull #miniPhone video{ object-fit:contain; }
+  #phone.videoFull #miniPhone .vidSlide video{ object-fit:contain; }
   #phone.videoFull #miniPhone .notch{ opacity:0; }
   #phone.photoFull #miniPhone{
     opacity:0; pointer-events:none;
@@ -119,6 +123,17 @@
     color:#fff; font-size:18px;
   }
   #phone.videoFull #collapseBtn{ display:flex; }
+
+  /* Sound indicator, shows briefly on unmute */
+  #soundHint{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    z-index:25; padding:10px 18px; border-radius:22px;
+    background:rgba(0,0,0,0.55); backdrop-filter:blur(6px);
+    font-size:13px; font-weight:600; letter-spacing:0.02em;
+    opacity:0; pointer-events:none;
+    transition:opacity 0.3s ease;
+  }
+  #soundHint.show{ opacity:1; }
 
   /* Top bar (autoplay toggle + counter) - hidden while photoFull */
   #topBar{
@@ -205,17 +220,20 @@
 
     <div id="miniPhone">
       <div class="notch"></div>
-      <div id="vidWrap">
-        <video id="vid" playsinline webkit-playsinline preload="auto"></video>
+      <div class="vidSlide" id="slideA">
+        <video id="vidA" playsinline webkit-playsinline preload="auto" muted></video>
       </div>
-      <video id="preloadVid" preload="auto" muted playsinline webkit-playsinline style="display:none"></video>
-      <video id="preloadPrevVid" preload="auto" muted playsinline webkit-playsinline style="display:none"></video>
+      <div class="vidSlide offBelow" id="slideB">
+        <video id="vidB" playsinline webkit-playsinline preload="auto" muted></video>
+      </div>
       <div id="playIcon">
         <svg id="playIconSvg" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
       </div>
     </div>
 
     <div id="collapseBtn">&#8964;</div>
+
+    <div id="soundHint">&#128266; Sound on</div>
 
     <div id="autoBtn"><span class="dot"></span><span id="autoLabel">Autoplay</span></div>
 
@@ -241,10 +259,10 @@
   const els = {
     bg1: document.getElementById('bg1'),
     bg2: document.getElementById('bg2'),
-    vid: document.getElementById('vid'),
-    vidWrap: document.getElementById('vidWrap'),
-    preloadVid: document.getElementById('preloadVid'),
-    preloadPrevVid: document.getElementById('preloadPrevVid'),
+    slideA: document.getElementById('slideA'),
+    slideB: document.getElementById('slideB'),
+    vidA: document.getElementById('vidA'),
+    vidB: document.getElementById('vidB'),
     miniPhone: document.getElementById('miniPhone'),
     collapseBtn: document.getElementById('collapseBtn'),
     counter: document.getElementById('counter'),
@@ -252,6 +270,7 @@
     autoLabel: document.getElementById('autoLabel'),
     playIcon: document.getElementById('playIcon'),
     playIconSvg: document.getElementById('playIconSvg'),
+    soundHint: document.getElementById('soundHint'),
     trackFill: document.getElementById('trackFill'),
     loadWrap: document.getElementById('loadWrap'),
     loadText: document.getElementById('loadText'),
@@ -270,6 +289,13 @@
   let view = 'dual'; // 'dual' | 'videoFull' | 'photoFull'
   let wasPlayingBeforePhotoFull = true;
   let swapLock = false;
+  let soundOn = false;   // browsers require a tap before audio can play
+  let curIsA = true;     // which slide layer is currently front-and-center
+
+  function curVid(){ return curIsA ? els.vidA : els.vidB; }
+  function curSlide(){ return curIsA ? els.slideA : els.slideB; }
+  function altVid(){ return curIsA ? els.vidB : els.vidA; }
+  function altSlide(){ return curIsA ? els.slideB : els.slideA; }
 
   function shuffle(arr){
     const a = arr.slice();
@@ -290,7 +316,7 @@
     activeBg = activeBg === 1 ? 2 : 1;
   }
 
-  // #1: Preload the upcoming photo so the crossfade never starts before it's ready
+  // Preload the upcoming photo so the crossfade never starts before it's ready
   function preloadPhotoAt(i){
     if(photos.length === 0) return;
     const img = new Image();
@@ -312,103 +338,130 @@
     photoTimer = setInterval(nextPhoto, 10000);
   }
 
-  function preloadNeighbors(){
+  // Warm the browser cache for the next clip so it starts instantly when swiped to.
+  // (The alt layer's video element doubles as the preloader.)
+  function preloadNext(){
     if(videos.length < 2) return;
     const nextIdx = (vIndex + 1) % videos.length;
-    const prevIdx = ((vIndex - 1) + videos.length) % videos.length;
     const nextUrl = 'videos/' + videos[nextIdx];
-    const prevUrl = 'videos/' + videos[prevIdx];
-    // avoid re-fetching if already warmed for this exact file
-    if(els.preloadVid.dataset.url !== nextUrl){
-      els.preloadVid.src = nextUrl;
-      els.preloadVid.dataset.url = nextUrl;
-      els.preloadVid.load();
-    }
-    if(nextIdx !== prevIdx && els.preloadPrevVid.dataset.url !== prevUrl){
-      els.preloadPrevVid.src = prevUrl;
-      els.preloadPrevVid.dataset.url = prevUrl;
-      els.preloadPrevVid.load();
+    const a = altVid();
+    if(a.dataset.url !== nextUrl){
+      a.src = nextUrl;
+      a.dataset.url = nextUrl;
+      a.load();
     }
   }
 
-  // #2: Capture a poster frame from an already-preloaded video element
-  function capturePosterFrom(el){
-    try{
-      if(el && el.readyState >= 2 && el.videoWidth > 0){
-        const c = document.createElement('canvas');
-        c.width = el.videoWidth;
-        c.height = el.videoHeight;
-        c.getContext('2d').drawImage(el, 0, 0);
-        return c.toDataURL('image/jpeg', 0.6);
-      }
-    }catch(e){ /* canvas capture can fail silently; poster is best-effort */ }
-    return null;
-  }
-
-  function loadVideo(index){
-    // #3: On forward wrap-around, reshuffle so a new cycle has a fresh order
+  function resolveIndex(index){
+    // On forward wrap-around, reshuffle so a new cycle has a fresh order
     if(videos.length > 1 && index >= videos.length){
       const lastClip = videos[vIndex];
       let reshuffled = shuffle(videos);
-      // avoid immediately repeating the clip we just watched
       let guard = 0;
       while(reshuffled[0] === lastClip && guard < 10){
         reshuffled = shuffle(videos);
         guard++;
       }
       videos = reshuffled;
-      // preload elements may now point at stale neighbors; clear their markers
-      delete els.preloadVid.dataset.url;
-      delete els.preloadPrevVid.dataset.url;
+      delete els.vidA.dataset.url;
+      delete els.vidB.dataset.url;
     }
-    vIndex = ((index % videos.length) + videos.length) % videos.length;
+    return ((index % videos.length) + videos.length) % videos.length;
+  }
+
+  function updateCounter(){
+    els.counter.textContent = (vIndex+1) + ' / ' + videos.length;
+  }
+
+  // Initial load: no animation, just play in the current layer (muted for autoplay policy)
+  function loadFirst(){
+    vIndex = 0;
+    const v = curVid();
+    const url = 'videos/' + videos[vIndex];
+    v.src = url;
+    v.dataset.url = url;
+    v.loop = !autoplay;
+    v.muted = true;
+    v.play().catch(()=>{});
+    updateCounter();
+    preloadNext();
+  }
+
+  // TikTok-style: incoming clip physically slides in while the old one slides out.
+  // Both layers are visible during the transition.
+  function slideTo(index, dir){
+    if(swapLock) return;
+    if(videos.length < 2) return;
+    swapLock = true;
+
+    vIndex = resolveIndex(index);
     const url = 'videos/' + videos[vIndex];
 
-    // #2: If this exact video was preloaded, show its first frame instantly as poster
-    let poster = null;
-    if(els.preloadVid.dataset.url === url) poster = capturePosterFrom(els.preloadVid);
-    else if(els.preloadPrevVid.dataset.url === url) poster = capturePosterFrom(els.preloadPrevVid);
-    if(poster){ els.vid.poster = poster; } else { els.vid.removeAttribute('poster'); }
+    const outSlide = curSlide();
+    const inSlide = altSlide();
+    const outV = curVid();
+    const inV = altVid();
 
-    els.vid.src = url;
-    els.vid.currentTime = 0;
-    els.vid.loop = !autoplay;
-    els.vid.play().catch(()=>{});
-    els.counter.textContent = (vIndex+1) + ' / ' + videos.length;
-    preloadNeighbors();
-  }
+    // Park incoming layer just offscreen on the approach side, no animation
+    inSlide.classList.add('noTrans');
+    inSlide.classList.remove('offAbove','offBelow');
+    inSlide.classList.add(dir > 0 ? 'offBelow' : 'offAbove');
+    void inSlide.offsetWidth;
+    inSlide.classList.remove('noTrans');
 
-  // #5: Slide transition between clips (TikTok-style)
-  function animatedLoad(index, dir){
-    if(swapLock){ return; }
-    if(videos.length < 2){ loadVideo(index); return; }
-    swapLock = true;
-    const w = els.vidWrap;
-    w.classList.add(dir > 0 ? 'swapOutUp' : 'swapOutDown');
-    setTimeout(function(){
-      loadVideo(index);
-      // jump instantly to the opposite edge, then slide into place
-      w.classList.add('noTrans');
-      w.classList.remove('swapOutUp','swapOutDown');
-      w.classList.add(dir > 0 ? 'swapOutDown' : 'swapOutUp');
-      void w.offsetWidth;
-      w.classList.remove('noTrans');
-      w.classList.remove('swapOutUp','swapOutDown');
-      setTimeout(function(){ swapLock = false; }, 240);
-    }, 220);
-  }
-
-  function goNext(){ animatedLoad(vIndex+1, 1); }
-  function goPrev(){ animatedLoad(vIndex-1, -1); }
-
-  els.vid.addEventListener('ended', function(){
-    if(autoplay){ goNext(); }
-  });
-  els.vid.addEventListener('timeupdate', function(){
-    if(els.vid.duration){
-      els.trackFill.style.width = (els.vid.currentTime/els.vid.duration*100) + '%';
+    // Start the incoming video playing (it may already be preloaded in this element)
+    if(inV.dataset.url !== url){
+      inV.src = url;
+      inV.dataset.url = url;
     }
-  });
+    inV.currentTime = 0;
+    inV.loop = !autoplay;
+    inV.muted = !soundOn;
+    inV.play().catch(()=>{});
+
+    // Animate: old slides away, new slides to center — both visible
+    outSlide.classList.remove('offAbove','offBelow');
+    outSlide.classList.add(dir > 0 ? 'offAbove' : 'offBelow');
+    inSlide.classList.remove('offAbove','offBelow');
+
+    updateCounter();
+
+    setTimeout(function(){
+      outV.pause();
+      outV.muted = true;
+      curIsA = !curIsA;
+      preloadNext();
+      swapLock = false;
+    }, 340);
+  }
+
+  function goNext(){ slideTo(vIndex+1, 1); }
+  function goPrev(){ slideTo(vIndex-1, -1); }
+
+  function onEnded(e){
+    if(e.target === curVid() && autoplay){ goNext(); }
+  }
+  function onTime(e){
+    const v = e.target;
+    if(v === curVid() && v.duration){
+      els.trackFill.style.width = (v.currentTime/v.duration*100) + '%';
+    }
+  }
+  els.vidA.addEventListener('ended', onEnded);
+  els.vidB.addEventListener('ended', onEnded);
+  els.vidA.addEventListener('timeupdate', onTime);
+  els.vidB.addEventListener('timeupdate', onTime);
+
+  // First user tap anywhere enables sound (autoplay policy requires a gesture)
+  function enableSound(){
+    if(soundOn) return;
+    soundOn = true;
+    curVid().muted = false;
+    els.soundHint.classList.add('show');
+    setTimeout(()=> els.soundHint.classList.remove('show'), 900);
+  }
+  document.addEventListener('pointerdown', enableSound, {capture:true});
+  document.addEventListener('touchstart', enableSound, {capture:true, passive:true});
 
   function flashPlayIcon(paused){
     els.playIconSvg.innerHTML = paused ? ICON_PLAY : ICON_PAUSE;
@@ -433,10 +486,10 @@
     if(view === 'photoFull') phoneEl.classList.add('photoFull');
 
     if(view === 'photoFull'){
-      wasPlayingBeforePhotoFull = !els.vid.paused;
-      els.vid.pause();
+      wasPlayingBeforePhotoFull = !curVid().paused;
+      curVid().pause();
     } else if(wasPlayingBeforePhotoFull){
-      els.vid.play().catch(()=>{});
+      curVid().play().catch(()=>{});
     }
   }
 
@@ -446,8 +499,9 @@
     if(view === 'dual'){
       setView('videoFull');
     } else if(view === 'videoFull'){
-      if(els.vid.paused){ els.vid.play(); flashPlayIcon(true); }
-      else { els.vid.pause(); flashPlayIcon(false); }
+      const v = curVid();
+      if(v.paused){ v.play(); flashPlayIcon(true); }
+      else { v.pause(); flashPlayIcon(false); }
     }
   });
 
@@ -472,7 +526,7 @@
     autoplay = !autoplay;
     els.autoBtn.classList.toggle('on', autoplay);
     els.autoLabel.textContent = autoplay ? 'Autoplay' : 'Loop';
-    els.vid.loop = !autoplay;
+    curVid().loop = !autoplay;
   });
 
   // Swipe handling (vertical) - works in dual and videoFull
@@ -521,7 +575,7 @@
       }
       els.loadWrap.style.display = 'none';
       els.autoBtn.classList.add('on');
-      loadVideo(0);
+      loadFirst();
       startPhotoCycle();
       positionAutoBtn();
     })
