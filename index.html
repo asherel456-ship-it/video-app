@@ -516,17 +516,18 @@
       <div id="settingsPanel">
         <div class="settingsClose"><span id="settingsCloseBtn">Close ✕</span></div>
 
-        <h3>Favorites mode</h3>
+        <h3>Filter videos</h3>
         <div class="settingsRow">
           <div id="favToggle">
             <div class="switch" id="favSwitch"><div class="knob"></div></div>
-            <span>Show only favorites</span>
+            <span>Apply filter</span>
           </div>
         </div>
         <div class="radioRow" id="thresholdRow">
           <label class="radioOpt"><input type="radio" name="favThresh" value="top50"><span>Top 50% most liked</span></label>
           <label class="radioOpt"><input type="radio" name="favThresh" value="top20"><span>Top 20% most liked</span></label>
           <label class="radioOpt"><input type="radio" name="favThresh" value="all"><span>Any video liked at least once</span></label>
+          <label class="radioOpt"><input type="radio" name="favThresh" value="unliked"><span>Videos with no likes yet</span></label>
         </div>
         <div class="settingsHint">Top 50%/20% are ranked among videos you've watched at least once — including ones with zero likes — sorted by like count.</div>
         <div class="settingsHint" id="cycleProgress"></div>
@@ -805,6 +806,9 @@
         .filter(f => (likes[f] || 0) > 0)
         .sort((a,b) => (likes[b]||0) - (likes[a]||0));
     }
+    if(favThreshold === 'unliked'){
+      return allVideos.filter(f => (likes[f] || 0) === 0);
+    }
     const pool = allVideos.filter(f => watched[f]);
     if(pool.length === 0) return [];
     const sorted = pool.slice().sort((a,b) => (likes[b]||0) - (likes[a]||0));
@@ -826,9 +830,13 @@
     const pool = favMode ? getFavoritesPool() : allVideos;
     if(pool.length === 0){
       videos = [];
-      els.loadText.textContent = favMode
-        ? 'No favorites yet — watch and like a few videos first'
-        : 'No videos found — upload some to /videos';
+      if(!favMode){
+        els.loadText.textContent = 'No videos found — upload some to /videos';
+      } else if(favThreshold === 'unliked'){
+        els.loadText.textContent = "You've liked every video — nothing left unliked!";
+      } else {
+        els.loadText.textContent = 'No favorites yet — watch and like a few videos first';
+      }
       els.loadWrap.style.display = 'flex';
       return false;
     }
