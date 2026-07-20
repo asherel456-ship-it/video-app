@@ -65,14 +65,14 @@
     letter-spacing:0.08em;
     transition:border-color 0.2s ease, transform 0.1s ease;
   }
-  #pwInput:focus{ border-color:var(--accent); }
+  #pwInput:focus{ border-color:#89CFF0; }
   #pwSubmit{
     width:100%;
     padding:13px 16px;
     border-radius:14px;
     border:none;
-    background:var(--accent);
-    color:#1a1206;
+    background:#89CFF0;
+    color:#0a2a38;
     font-size:15px; font-weight:700; letter-spacing:0.03em;
     cursor:pointer;
   }
@@ -347,8 +347,6 @@
     transition:opacity 0.3s ease;
   }
   #phone.photoFull #bottomBar{ opacity:0; pointer-events:none; }
-  #track{ height:3px; width:100%; background:rgba(255,255,255,0.18); border-radius:2px; overflow:hidden; }
-  #trackFill{ height:100%; width:0%; background:var(--ink); transition:width 0.1s linear; }
   #hint{ font-size:12.5px; color:var(--dim); text-align:center; letter-spacing:0.02em; }
 
   #playIcon{
@@ -506,7 +504,6 @@
     </div>
 
     <div id="bottomBar">
-      <div id="track"><div id="trackFill"></div></div>
       <div id="hint">Swipe up/down for videos · left/right for photos · hold photo to save</div>
     </div>
 
@@ -532,6 +529,7 @@
           <label class="radioOpt"><input type="radio" name="favThresh" value="all"><span>Any video liked at least once</span></label>
         </div>
         <div class="settingsHint">Top 50%/20% are ranked among videos you've watched at least once — including ones with zero likes — sorted by like count.</div>
+        <div class="settingsHint" id="cycleProgress"></div>
 
         <h3>Backup</h3>
         <div class="settingsBtnRow">
@@ -587,7 +585,6 @@
     playIcon: document.getElementById('playIcon'),
     playIconSvg: document.getElementById('playIconSvg'),
     soundHint: document.getElementById('soundHint'),
-    trackFill: document.getElementById('trackFill'),
     loadWrap: document.getElementById('loadWrap'),
     loadText: document.getElementById('loadText'),
     settingsBtn: document.getElementById('settingsBtn'),
@@ -595,6 +592,7 @@
     settingsCloseBtn: document.getElementById('settingsCloseBtn'),
     favSwitch: document.getElementById('favSwitch'),
     thresholdRow: document.getElementById('thresholdRow'),
+    cycleProgress: document.getElementById('cycleProgress'),
     backupBtn: document.getElementById('backupBtn'),
     restoreBtn: document.getElementById('restoreBtn'),
     restoreInput: document.getElementById('restoreInput'),
@@ -611,18 +609,21 @@
   const WATCHED_KEY = 'vp_watched_v1';
   const FAV_MODE_KEY = 'vp_favmode_v1';
   const FAV_THRESH_KEY = 'vp_favthresh_v1';
-  const QUEUE_KEY = 'vp_queue_v1';
+  const QUEUE_KEY = 'vp_queue_v2'; // v2: per-mode storage, immune to library growth
 
-  function computeQueueKey(){
-    return (favMode ? ('fav:' + favThreshold) : 'all') + '|' + videos.slice().sort().join(',');
+  function currentModeKey(){
+    return favMode ? ('fav:' + favThreshold) : 'all';
+  }
+  function loadQueueStore(){
+    try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || '{}'); }catch(e){ return {}; }
+  }
+  function saveQueueStore(store){
+    try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(store)); }catch(e){}
   }
   function saveQueueState(){
-    try{
-      localStorage.setItem(QUEUE_KEY, JSON.stringify({ key: computeQueueKey(), seen: Array.from(seenSet) }));
-    }catch(e){}
-  }
-  function loadQueueState(){
-    try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || 'null'); }catch(e){ return null; }
+    const store = loadQueueStore();
+    store[currentModeKey()] = Array.from(seenSet);
+    saveQueueStore(store);
   }
 
   let allVideos = [];  // full raw list from manifest, never filtered
@@ -834,14 +835,10 @@
     els.loadWrap.style.display = 'none';
     videos = pool.slice();
 
-    const wantedKey = (favMode ? ('fav:' + favThreshold) : 'all') + '|' + pool.slice().sort().join(',');
-    const saved = loadQueueState();
-    if(saved && saved.key === wantedKey && Array.isArray(saved.seen)){
-      seenSet = new Set(saved.seen.filter(f => pool.includes(f)));
-    } else {
-      seenSet = new Set();
-      saveQueueState();
-    }
+    const store = loadQueueStore();
+    const savedSeen = store[currentModeKey()];
+    seenSet = new Set(Array.isArray(savedSeen) ? savedSeen.filter(f => pool.includes(f)) : []);
+    saveQueueState();
     pendingNextFile = null;
     delete els.vidA.dataset.url;
     delete els.vidB.dataset.url;
@@ -1046,16 +1043,8 @@
   function onEnded(e){
     if(e.target === curVid() && autoplay){ goNext(); }
   }
-  function onTime(e){
-    const v = e.target;
-    if(v === curVid() && v.duration){
-      els.trackFill.style.width = (v.currentTime/v.duration*100) + '%';
-    }
-  }
   els.vidA.addEventListener('ended', onEnded);
   els.vidB.addEventListener('ended', onEnded);
-  els.vidA.addEventListener('timeupdate', onTime);
-  els.vidB.addEventListener('timeupdate', onTime);
 
   function enableSound(){
     if(soundOn) return;
@@ -1252,6 +1241,7 @@
       r.checked = (r.value === favThreshold);
       r.closest('.radioOpt').classList.toggle('active', r.checked);
     });
+    els.cycleProgress.textContent = 'This cycle: ' + seenSet.size + ' of ' + videos.length + ' shown (persists across app closes).';
     renderLikedList();
     els.settingsOverlay.classList.add('show');
   }
